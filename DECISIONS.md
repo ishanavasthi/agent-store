@@ -94,6 +94,100 @@ Rejected: generated captions; stock-photo sourcing (licensing friction).
 Revisit when: never within this build.
 Tier: Verified (user decision, 2026-08-22)
 
+# Domain-model grilling round (2026-08-23) — vocabulary now canonical in CONTEXT.md
+
+## 2026-08-23: An Agent is its registration — no stable buyer identity in v1
+Why: nothing exists to anchor identity to (authless transport, no OAuth, no verified registry). Re-registration mints a new Agent with a fresh cap; Sybil cap-bypass is documented as a v1 non-goal — the gap a UAP-style verified registry would close, which is the point the project illustrates. Full reasoning: docs/adr/0001.
+Rejected: stable external identifier at registration (nothing trustworthy to bind it to).
+Revisit when: post-v1 hardening / any real UAP spec.
+Tier: Verified (user decision, 2026-08-23)
+
+## 2026-08-23: "Order" = our domain entity; the Razorpay object is always "gateway order"
+Why: two entities were sharing one word across §5.1/M1. The audit log and rule-auditor speak only in domain Orders; code says `gatewayOrderId`, never a bare `orderId` for the Razorpay object. Docs updated to reflect the split.
+Rejected: contextual disambiguation ("it's obvious from context" — it wasn't).
+Revisit when: never.
+Tier: Verified (user decision, 2026-08-23)
+
+## 2026-08-23: No stored cart — `create_cart` is one-shot and returns the immutable Cart mandate
+Why: the LLM buyer holds its own draft; the mandate chain wants one immutable signed artifact; kills cart-lifecycle state days before deadline. Full reasoning: docs/adr/0002.
+Rejected: mutable server-side draft cart with add/remove tools (state and expiry semantics that buy nothing).
+Revisit when: never within this build.
+Tier: Verified (user decision, 2026-08-23)
+
+## 2026-08-23: Variant is the sellable unit
+Why: streetwear means size/color; stock, price, cart lines, and oversell checks reference a Variant ID. Product is a display/search grouping; ingestion defaults all variants of a captioned product to the caption's single price; products without stated variants get one implicit default variant so checkout never branches on "has variants?".
+Rejected: product-level stock/price with variant as an attribute (breaks oversell and cart-line precision).
+Revisit when: never within this build.
+Tier: Verified (user decision, 2026-08-23)
+
+## 2026-08-23: Two enforced spend limits — Budget (per Intent) and Cap (per Agent×Merchant)
+Why: Cap is declared by the buyer at registration (self-imposed, Reserve-Pay-style) and immutable for that registration's lifetime; Budget is declared in the Intent mandate. Both are enforced at mandate verification, each with its own refusal code (`OVER_BUDGET`, `OVER_CAP`) — two named refusals make eval scenarios crisper.
+Rejected: budget as recorded-but-unenforced intent; merchant-set caps (wrong party — Reserve Pay's model is the payer limiting their own agent).
+Revisit when: never within this build.
+Tier: Verified (user decision, 2026-08-23)
+
+## 2026-08-23: Merchant is a first-class entity; no merchant-scoped routing in v1
+Why: Merchant is a real row (ID, signing key, name) and everything foreign-keys to it — honest multi-merchant vocabulary — but one deployment serves one merchant with `merchantId` as config. No `/m/:merchantId/` URL space; marketplace routing is already on the cut list.
+Rejected: implicit single-merchant schema (repaints every table later); full multi-merchant routing (marketplace scope creep).
+Revisit when: post-v1 if a second merchant outgrows the buffer-time demo.
+Tier: Verified (user decision, 2026-08-23)
+
+## 2026-08-23: Refusal / Decline / validation error are three distinct words
+Why: Refusal = trust layer says no on policy, before money moves, always with `{code, reason, recoverable}`. Decline = gateway says no after the trust layer said yes. Malformed input is a plain validation error. The rule-auditor's "every refusal has a reason code" is only checkable if Refusal is the narrow term.
+Rejected: "refusal" as umbrella for any system no.
+Revisit when: never.
+Tier: Verified (user decision, 2026-08-23)
+
+## 2026-08-23: Confidence gates publishing at product level; high-confidence fields auto-publish
+Why: fields at/above threshold publish without merchant action; any below-threshold field holds the whole Product in `needs-confirmation` (lifecycle `draft → needs-confirmation → published`). Field-level publishing would allow half-visible products — an agent could cart an item whose price was never confirmed.
+Rejected: every-field-confirmed (merchant burden, kills the auto-publish story); field-level publishing (half-visible products).
+Revisit when: never within this build.
+Tier: Verified (user decision, 2026-08-23)
+
+## 2026-08-23: Cart mandates coexist freely; Intent mandates are consumed once (chain is 1:1:1)
+Why: no invalidation and no TTL keeps the no-stored-cart model pure (safety = payment-time verification). Stress-testing found one hole — N carts under one Intent could each pass a per-cart budget check while cumulatively exceeding the Budget — closed by intent consumption: first paid Cart mandate consumes its Intent, later attempts refuse with `INTENT_CONSUMED`. A second purchase signs a new Intent (cheap for an LLM buyer). See ADR-0002.
+Rejected: invalidate-previous-carts (re-introduces cart state); TTL (clock-dependent demo/eval failure mode for no real risk); cumulative-budget-per-intent (more bookkeeping, muddier auditor claim than 1:1:1).
+Revisit when: never within this build.
+Tier: Verified (user-delegated 2026-08-23: approved (a) conditional on the reasoning clearing; intent-consumption amendment adopted by Claude to close the budget hole — flagged for veto)
+
+## 2026-08-23: No stock reservations; decrement at fulfillment, atomically
+Why: the oversell rehearsed failure only exists because carting reserves nothing — stock is checked at payment-mandate verification and re-checked at fulfillment; the race window between them is deliberate. Decrement happens at the fulfillment-time check via atomic conditional update (`UPDATE ... SET stock = stock - qty WHERE stock >= qty`): row hit = fulfilled, miss = oversell → refund path. Decrementing at capture would make the oversell scenario unscriptable.
+Rejected: cart-time reservation (kills the oversell demo); decrement-at-capture.
+Revisit when: never within this build.
+Tier: Verified (user decision, 2026-08-23)
+
+## 2026-08-23: Idempotency keys are buyer-minted; reuse with a different cart hash refuses
+Why: buyer-minted is the convention (SDK helper generates UUIDs); scoped Agent×Merchant. Same key + same cart hash → replay original result. Same key + different cart hash → refuse `IDEMPOTENCY_REUSE`, never silently return a result for a cart the buyer didn't submit. Free eval scenario.
+Rejected: server-minted keys (buyer can't retry safely); silent replay on mismatched cart.
+Revisit when: never.
+Tier: Verified (user decision, 2026-08-23)
+
+## 2026-08-23: Receipts are merchant-signed chain proofs; refunds produce a linked refund receipt
+Why: Receipt = Order ID + all three mandate hashes + amount + gateway payment ID + timestamp, signed with the merchant key — a buyer can prove this chain led to this charge to a third party. The oversell path emits a signed refund receipt referencing the original: same signing code, completes the audit-viewer story for rehearsed failure #2.
+Rejected: unsigned confirmation payload; refund as audit-entry-only.
+Revisit when: never within this build.
+Tier: Verified (user decision, 2026-08-23)
+
+## 2026-08-23: Audit events commit atomically with state; the system is NOT event-sourced
+Why: the rule-auditor's claim rests on log completeness — so every state transition writes its audit event in the same DB transaction (complete by construction), but state is not rebuilt from the log. Full reasoning: docs/adr/0003.
+Rejected: fire-and-forget logging (audit theater); full event sourcing (projection/replay machinery a days-long build can't afford, proves nothing extra).
+Revisit when: never within this build.
+Tier: Verified (user decision, 2026-08-23)
+
+## 2026-08-23: Money is integer paise, INR only
+Why: floating-point money under an auditor asserting "no charge above cap" is self-sabotage; Razorpay's API is already paise-denominated, so zero impedance. No currency field except where gateway calls demand one.
+Rejected: decimal strings; multi-currency schema.
+Revisit when: never.
+Tier: Verified (user decision, 2026-08-23)
+
+## 2026-08-23: Stock is a required field — missing stock always blocks publishing
+Why: captions almost never state quantities, and stock is where the oversell failure and cap math live — a defaulted number is fiction in exactly the field the rule-auditor reasons about. Merchant must fill stock at confirmation; in practice nearly every demo product therefore passes through the confirmation screen, which guarantees that screen appears in the demo.
+Rejected: defaulted finite stock with a low-confidence flag (honest-numbers story poisoned).
+Revisit when: never within this build.
+Tier: Verified (user decision, 2026-08-23)
+
+---
+
 ## 2026-08-22: Repo posture — reads as an infrastructure project; release logistics git-ignored
 Why: the repository should stand as a real project on its own terms. All submission/release-specific material (form questions, deadline notes, video outline, research archive) lives in git-ignored `private/`.
 Rejected: submission framing in PLAN.md/README (original rev 1 plan).
