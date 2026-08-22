@@ -1,0 +1,16 @@
+# Local-only material (submission logistics, research archive)
+private/
+
+# Node
+node_modules/
+dist/
+build/
+*.log
+
+# Env & secrets
+.env
+.env.*
+!.env.example
+
+# OS / editor
+.DS_Store
