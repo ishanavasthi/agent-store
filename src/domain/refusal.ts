@@ -1,0 +1,95 @@
+/**
+ * The failure vocabulary, kept strictly separate (CONTEXT.md → Failure vocabulary).
+ *
+ * Three different things must never share a type, because the rule-auditor's
+ * guarantees are about exactly one of them:
+ *
+ *   - **Refusal** — the trust layer saying no, *on policy*, before money moves.
+ *     Always `{code, reason, recoverable, retryAfter?}`. This is the only one
+ *     the rule-auditor reasons about.
+ *   - **Decline** — the gateway saying no *after* the trust layer said yes.
+ *     Never a Refusal. Lives on the webhook path, not here.
+ *   - **Validation error** — malformed input, a schema violation, a reference to
+ *     something that does not exist. Neither of the above.
+ */
+
+/**
+ * T1 enforces only the pre-payment stock case, which CONTEXT.md names as *the*
+ * refusal case ("out-of-stock — that's the pre-payment refusal case"). The
+ * trust layer (T3/T4) adds the rest of this union; they are listed now so the
+ * vocabulary is fixed in one place rather than accreting per ticket.
+ */
+export type RefusalCode =
+  | 'OUT_OF_STOCK'
+  // Reserved for T3/T4 — not yet reachable:
+  | 'OVER_BUDGET'
+  | 'OVER_CAP'
+  | 'IDEMPOTENCY_REUSE'
+  | 'INTENT_CONSUMED'
+  | 'PRICE_CHANGED'
+  | 'UNREGISTERED_AGENT'
+  | 'INVALID_MANDATE';
+
+export interface RefusalPayload {
+  readonly code: RefusalCode;
+  readonly reason: string;
+  /** Whether the Agent can do something and try again. */
+  readonly recoverable: boolean;
+  /** Seconds to wait before a retry could succeed. Omitted when never. */
+  readonly retryAfter?: number;
+}
+
+/**
+ * Thrown when policy says no before money moves. Carries the structured payload
+ * an LLM buyer recovers from — never bare prose.
+ */
+export class Refusal extends Error {
+  readonly code: RefusalCode;
+  readonly reason: string;
+  readonly recoverable: boolean;
+  readonly retryAfter: number | undefined;
+
+  constructor(payload: RefusalPayload) {
+    super(`${payload.code}: ${payload.reason}`);
+    this.name = 'Refusal';
+    this.code = payload.code;
+    this.reason = payload.reason;
+    this.recoverable = payload.recoverable;
+    this.retryAfter = payload.retryAfter;
+  }
+
+  toPayload(): RefusalPayload {
+    return {
+      code: this.code,
+      reason: this.reason,
+      recoverable: this.recoverable,
+      ...(this.retryAfter === undefined ? {} : { retryAfter: this.retryAfter }),
+    };
+  }
+}
+
+export type ValidationErrorCode = 'INVALID_QUANTITY' | 'VARIANT_NOT_FOUND' | 'ORDER_NOT_FOUND';
+
+/**
+ * A malformed or unsatisfiable request. Deliberately a *different shape* from
+ * `RefusalPayload` — no `recoverable`, no `retryAfter` — so that neither the
+ * rule-auditor nor a buyer agent can mistake one category for the other.
+ */
+export interface ValidationErrorPayload {
+  readonly code: ValidationErrorCode;
+  readonly message: string;
+}
+
+export class ValidationError extends Error {
+  readonly code: ValidationErrorCode;
+
+  constructor(code: ValidationErrorCode, message: string) {
+    super(message);
+    this.name = 'ValidationError';
+    this.code = code;
+  }
+
+  toPayload(): ValidationErrorPayload {
+    return { code: this.code, message: this.message };
+  }
+}

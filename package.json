@@ -20,7 +20,6 @@
     "db:seed:prod": "node dist/db/seed.js"
   },
   "dependencies": {
-    "@cfworker/json-schema": "^4.1.1",
     "@modelcontextprotocol/sdk": "^1.30.0",
     "@neondatabase/serverless": "^1.1.0",
     "drizzle-orm": "^0.45.2",

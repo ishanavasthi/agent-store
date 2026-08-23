@@ -145,6 +145,13 @@ export const auditEvents = pgTable(
   (table) => [index('audit_events_order_seq_idx').on(table.orderId, table.seq)],
 );
 
+/**
+ * Enum unions derived from the pgEnums, so a status is never widened to
+ * `string` on its way out of the database and into a view.
+ */
+export type ProductStatus = (typeof productStatus.enumValues)[number];
+export type OrderStatus = (typeof orderStatus.enumValues)[number];
+
 export type MerchantRow = typeof merchants.$inferSelect;
 export type ProductRow = typeof products.$inferSelect;
 export type VariantRow = typeof variants.$inferSelect;

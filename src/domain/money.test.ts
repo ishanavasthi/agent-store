@@ -1,13 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  MoneyError,
-  formatPaise,
-  isPaise,
-  multiplyPaise,
-  paise,
-  parseRupeesToPaise,
-  sumPaise,
-} from './money.js';
+import { MoneyError, formatPaise, isPaise, moneyView, multiplyPaise, paise } from './money.js';
 
 describe('paise', () => {
   it('accepts non-negative integers', () => {
@@ -31,30 +23,26 @@ describe('paise', () => {
     expect(isPaise(100)).toBe(true);
     expect(isPaise('100')).toBe(false);
     expect(isPaise(1.5)).toBe(false);
+    expect(isPaise(-1)).toBe(false);
+    expect(isPaise(null)).toBe(false);
   });
 });
 
-describe('sumPaise / multiplyPaise', () => {
-  it('sums line amounts exactly', () => {
-    expect(sumPaise([paise(49900), paise(129900), paise(1)])).toBe(179801);
-  });
-
-  it('sums an empty basket to zero', () => {
-    expect(sumPaise([])).toBe(0);
-  });
-
+describe('multiplyPaise', () => {
   it('multiplies by quantity', () => {
     expect(multiplyPaise(paise(129900), 3)).toBe(389700);
+    expect(multiplyPaise(paise(129900), 1)).toBe(129900);
     expect(multiplyPaise(paise(129900), 0)).toBe(0);
   });
 
-  it('rejects a fractional quantity', () => {
+  it('rejects a fractional or negative quantity', () => {
     expect(() => multiplyPaise(paise(100), 1.5)).toThrow(MoneyError);
+    expect(() => multiplyPaise(paise(100), -1)).toThrow(MoneyError);
   });
 
-  it('has no float drift where naive rupee maths would', () => {
-    // 0.07 + 0.01 in rupees is 0.08000000000000002 as a float.
-    expect(sumPaise([paise(7), paise(1)])).toBe(8);
+  it('stays exact where naive rupee maths would drift', () => {
+    // 0.07 * 3 in rupees is 0.21000000000000002 as a float.
+    expect(multiplyPaise(paise(7), 3)).toBe(21);
   });
 });
 
@@ -76,26 +64,12 @@ describe('formatPaise', () => {
   });
 });
 
-describe('parseRupeesToPaise', () => {
-  it.each([
-    ['499', 49900],
-    ['499.00', 49900],
-    ['499.5', 49950],
-    ['499.05', 49905],
-    ['₹1,299.00', 129900],
-    ['  1299 ', 129900],
-    ['0.07', 7],
-  ])('parses %s to %i paise', (input, expected) => {
-    expect(parseRupeesToPaise(input)).toBe(expected);
-  });
-
-  it('round-trips through formatPaise', () => {
-    for (const amount of [0, 1, 7, 49900, 129950, 12345678]) {
-      expect(parseRupeesToPaise(formatPaise(paise(amount)))).toBe(amount);
-    }
-  });
-
-  it.each(['', 'free', '499.999', '-499', '4 9 9x'])('rejects %p', (input) => {
-    expect(() => parseRupeesToPaise(input)).toThrow(MoneyError);
+describe('moneyView', () => {
+  it('bundles the amount, its display form and the currency', () => {
+    expect(moneyView(paise(129900))).toEqual({
+      amountPaise: 129900,
+      amountDisplay: '₹1,299.00',
+      currency: 'INR',
+    });
   });
 });
