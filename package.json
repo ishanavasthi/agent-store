@@ -15,7 +15,9 @@
     "dev": "node --watch --experimental-strip-types src/index.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "node --experimental-strip-types src/db/migrate.ts",
-    "db:seed": "node --experimental-strip-types src/db/seed.ts"
+    "db:seed": "node --experimental-strip-types src/db/seed.ts",
+    "db:migrate:prod": "node dist/db/migrate.js",
+    "db:seed:prod": "node dist/db/seed.js"
   },
   "dependencies": {
     "@cfworker/json-schema": "^4.1.1",
