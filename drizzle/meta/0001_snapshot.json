@@ -1,6 +1,6 @@
 {
-  "id": "01f780d1-5c64-4ebb-ae03-5f81c9df1e45",
-  "prevId": "c290c623-a843-4dc5-ab22-88487d411972",
+  "id": "77802254-6140-4751-94a5-dee6095758c7",
+  "prevId": "5dfb894e-1835-4700-9eb4-8afd43de9846",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -507,10 +507,12 @@
       "schema": "public",
       "values": [
         "order.created",
-        "gateway.order_created",
+        "gateway.payment_link_attempted",
         "gateway.payment_link_issued",
         "gateway.webhook_received",
-        "order.paid"
+        "gateway.order_linked",
+        "order.paid",
+        "order.anomaly_detected"
       ]
     },
     "public.order_status": {

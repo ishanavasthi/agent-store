@@ -3,9 +3,7 @@ import { paise } from '../domain/money.js';
 import { parseRazorpayWebhook, verifyRazorpaySignature } from './razorpayWebhook.js';
 import {
   GatewayError,
-  type CreateGatewayOrderParams,
   type CreatePaymentLinkParams,
-  type GatewayOrder,
   type GatewayWebhookEvent,
   type PaymentGateway,
   type PaymentLink,
@@ -22,7 +20,7 @@ export interface RazorpayGatewayOptions {
  *
  * This is the *only* file in the codebase that imports `razorpay`. T2's
  * deterministic stub implements the same `PaymentGateway` interface and is
- * swapped in at composition time — nothing above this seam changes.
+ * swapped in at the composition root — nothing above this seam changes.
  *
  * Amounts cross this boundary unconverted: Razorpay is paise-denominated and so
  * are we, so there is no place for a rounding bug to live.
@@ -45,32 +43,21 @@ export class RazorpayGateway implements PaymentGateway {
     this.#webhookSecret = options.webhookSecret;
   }
 
-  async createGatewayOrder(params: CreateGatewayOrderParams): Promise<GatewayOrder> {
-    try {
-      const created = await this.#client.orders.create({
-        amount: params.amountPaise,
-        currency: params.currency,
-        // `receipt` is the field a webhook echoes back as our domain Order id.
-        receipt: params.reference,
-        notes: { ...params.notes },
-      });
-      return {
-        gatewayOrderId: created.id,
-        amountPaise: paise(Number(created.amount)),
-        currency: String(created.currency),
-        status: created.status,
-      };
-    } catch (error) {
-      throw new GatewayError('Failed to create gateway order at Razorpay', error);
-    }
-  }
-
+  /**
+   * Creates the *only* checkout-time gateway artifact.
+   *
+   * Razorpay mints its own gateway order behind this link; we neither create
+   * one nor trust the `order_id` echoed here as final. The authoritative
+   * gateway order id is the one the webhook reports, because that is the object
+   * the payment actually hit.
+   */
   async createPaymentLink(params: CreatePaymentLinkParams): Promise<PaymentLink> {
     try {
       const created = await this.#client.paymentLink.create({
         amount: params.amountPaise,
         currency: params.currency,
         description: params.description,
+        // The field a webhook echoes back as our domain Order id.
         reference_id: params.reference,
         callback_url: params.callbackUrl,
         callback_method: 'get',
@@ -80,11 +67,16 @@ export class RazorpayGateway implements PaymentGateway {
         notify: { sms: false, email: false },
         notes: { ...params.notes },
       });
+
+      const hintedOrderId = (created as { order_id?: unknown }).order_id;
+
       return {
         gatewayPaymentLinkId: created.id,
         url: created.short_url,
         amountPaise: paise(Number(created.amount)),
         status: String(created.status),
+        gatewayOrderId:
+          typeof hintedOrderId === 'string' && hintedOrderId !== '' ? hintedOrderId : null,
       };
     } catch (error) {
       throw new GatewayError('Failed to create Payment Link at Razorpay', error);

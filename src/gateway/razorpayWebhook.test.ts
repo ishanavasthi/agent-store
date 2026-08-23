@@ -91,6 +91,29 @@ describe('parseRazorpayWebhook', () => {
     },
   });
 
+  it('does not throw MoneyError on a malformed amount', () => {
+    // A signed-but-unparseable body must surface as WebhookParseError so the
+    // route can answer 200/ignored. A MoneyError would escape as a 500 and
+    // Razorpay would redeliver the same broken body forever.
+    // NaN is absent on purpose: JSON.stringify turns it into `null`, so it can
+    // never actually arrive over the wire — it reads as an absent amount.
+    for (const bad of [49900.5, -1, '49900', true]) {
+      const body = JSON.stringify({
+        event: 'payment.captured',
+        payload: { payment: { entity: { id: 'pay_1', amount: bad } } },
+      });
+      expect(() => parseRazorpayWebhook(body)).toThrow(WebhookParseError);
+    }
+  });
+
+  it('treats an absent amount as null rather than an error', () => {
+    const body = JSON.stringify({
+      event: 'payment.captured',
+      payload: { payment: { entity: { id: 'pay_1', notes: { orderId: 'ord_a' } } } },
+    });
+    expect(parseRazorpayWebhook(body).amountPaise).toBeNull();
+  });
+
   it('recovers the domain Order id from reference_id', () => {
     const event = parseRazorpayWebhook(paymentLinkPaid);
     expect(event.reference).toBe('ord_9f2c1e5b7a4d4c1e8f0a2b3c4d5e6f70');
@@ -156,5 +179,17 @@ describe('parseRazorpayWebhook', () => {
     const event = parseRazorpayWebhook(weird);
     expect(event.gatewayPaymentId).toBeNull();
     expect(event.amountPaise).toBeNull();
+  });
+
+  it('prefers a reference we set over the gateway order receipt', () => {
+    // reference_id and notes.orderId are ours; receipt could be anything.
+    const body = JSON.stringify({
+      event: 'payment_link.paid',
+      payload: {
+        payment_link: { entity: { id: 'plink_1', reference_id: 'ord_from_link' } },
+        order: { entity: { id: 'order_1', receipt: 'ord_from_receipt' } },
+      },
+    });
+    expect(parseRazorpayWebhook(body).reference).toBe('ord_from_link');
   });
 });

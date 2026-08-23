@@ -18,12 +18,7 @@ async function main(): Promise<void> {
     webhookSecret: config.razorpay.webhookSecret,
   });
 
-  const app = createApp({
-    db,
-    gateway,
-    merchantId: MERCHANT_ID,
-    publicBaseUrl: config.publicBaseUrl,
-  });
+  const app = createApp({ db, gateway, merchantId: MERCHANT_ID, publicBaseUrl: config.publicBaseUrl });
 
   const server = app.listen(config.port, () => {
     console.log(`[agent-store] listening on :${config.port}`);

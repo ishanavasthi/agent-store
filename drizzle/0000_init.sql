@@ -1,4 +1,4 @@
-CREATE TYPE "public"."audit_event_type" AS ENUM('order.created', 'gateway.order_created', 'gateway.payment_link_issued', 'gateway.webhook_received', 'order.paid');--> statement-breakpoint
+CREATE TYPE "public"."audit_event_type" AS ENUM('order.created', 'gateway.payment_link_attempted', 'gateway.payment_link_issued', 'gateway.webhook_received', 'gateway.order_linked', 'order.paid', 'order.anomaly_detected');--> statement-breakpoint
 CREATE TYPE "public"."order_status" AS ENUM('created', 'awaiting_payment', 'paid', 'cancelled', 'refunded');--> statement-breakpoint
 CREATE TYPE "public"."product_status" AS ENUM('draft', 'needs_confirmation', 'published');--> statement-breakpoint
 CREATE TABLE "audit_events" (

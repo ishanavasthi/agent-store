@@ -1,11 +1,11 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { MERCHANT_NAME } from '../config.js';
-import type { Database } from '../db/client.js';
-import { listPublishedVariants, findPublishedVariant } from '../domain/catalog.js';
-import { CheckoutError, checkout } from '../domain/checkout.js';
+import type { StorefrontDeps } from '../deps.js';
+import { findPublishedVariant, listPublishedVariants } from '../domain/catalog.js';
+import { checkout } from '../domain/checkout.js';
 import { findOrderById, toOrderStatusView } from '../domain/orders.js';
-import type { PaymentGateway } from '../gateway/types.js';
+import { Refusal, ValidationError } from '../domain/refusal.js';
 
 /**
  * The MCP face of the storefront core.
@@ -18,25 +18,38 @@ import type { PaymentGateway } from '../gateway/types.js';
  * this function must stay cheap and hold no per-connection state.
  */
 
-export interface McpDeps {
-  readonly db: Database;
-  readonly gateway: PaymentGateway;
-  readonly merchantId: string;
-  readonly publicBaseUrl: string;
-}
-
 function textResult(payload: unknown) {
   return { content: [{ type: 'text' as const, text: JSON.stringify(payload, null, 2) }] };
 }
 
-function errorResult(code: string, message: string) {
+/**
+ * Failures reach the buyer agent as `isError` results carrying a structured
+ * body, never as prose. The two categories stay visibly distinct on the wire —
+ * a Refusal has `recoverable`, a validation error does not — so an LLM buyer
+ * can branch on which kind of "no" it received (CONTEXT.md → Failure vocabulary).
+ */
+function refusalResult(refusal: Refusal) {
   return {
     isError: true,
-    content: [{ type: 'text' as const, text: JSON.stringify({ code, message }, null, 2) }],
+    content: [
+      { type: 'text' as const, text: JSON.stringify({ refusal: refusal.toPayload() }, null, 2) },
+    ],
   };
 }
 
-export function createMcpServer(deps: McpDeps): McpServer {
+function validationResult(error: ValidationError) {
+  return {
+    isError: true,
+    content: [
+      {
+        type: 'text' as const,
+        text: JSON.stringify({ validationError: error.toPayload() }, null, 2),
+      },
+    ],
+  };
+}
+
+export function createMcpServer(deps: StorefrontDeps): McpServer {
   const server = new McpServer(
     { name: 'agent-store', version: '0.1.0' },
     {
@@ -62,7 +75,6 @@ export function createMcpServer(deps: McpDeps): McpServer {
       const catalogue = await listPublishedVariants(deps.db, deps.merchantId);
       return textResult({
         merchant: MERCHANT_NAME,
-        currency: 'INR',
         note: 'All prices are integer paise. 49900 paise = ₹499.00.',
         variants: catalogue,
       });
@@ -87,21 +99,20 @@ export function createMcpServer(deps: McpDeps): McpServer {
     },
     async ({ variantId, quantity }) => {
       try {
-        const result = await checkout(
-          { db: deps.db, gateway: deps.gateway, publicBaseUrl: deps.publicBaseUrl },
-          { merchantId: deps.merchantId, variantId, quantity: quantity ?? 1 },
-        );
+        const result = await checkout(deps, {
+          merchantId: deps.merchantId,
+          variantId,
+          quantity: quantity ?? 1,
+        });
         return textResult({
           orderId: result.orderId,
           status: result.status,
-          amountPaise: result.amountPaise,
-          amountDisplay: result.amountDisplay,
-          currency: result.currency,
+          total: result.total,
           quantity: result.quantity,
           product: result.variant.productTitle,
           variantId: result.variant.variantId,
           paymentLinkUrl: result.paymentLinkUrl,
-          gatewayOrderId: result.gatewayOrderId,
+          gatewayPaymentLinkId: result.gatewayPaymentLinkId,
           nextStep:
             'Give paymentLinkUrl to your human and ask them to approve it. ' +
             'In Razorpay test mode the UPI id success@razorpay completes the payment. ' +
@@ -109,7 +120,8 @@ export function createMcpServer(deps: McpDeps): McpServer {
           auditUrl: `${deps.publicBaseUrl}/audit/${result.orderId}`,
         });
       } catch (error) {
-        if (error instanceof CheckoutError) return errorResult(error.code, error.message);
+        if (error instanceof Refusal) return refusalResult(error);
+        if (error instanceof ValidationError) return validationResult(error);
         throw error;
       }
     },
@@ -129,12 +141,13 @@ export function createMcpServer(deps: McpDeps): McpServer {
     async ({ orderId }) => {
       const row = await findOrderById(deps.db, deps.merchantId, orderId);
       if (row === null) {
-        return errorResult('ORDER_NOT_FOUND', `No order with id ${orderId}`);
+        return validationResult(
+          new ValidationError('ORDER_NOT_FOUND', `No order with id ${orderId}`),
+        );
       }
-      const view = toOrderStatusView(row);
       const variant = await findPublishedVariant(deps.db, deps.merchantId, row.variantId);
       return textResult({
-        ...view,
+        ...toOrderStatusView(row),
         product: variant?.productTitle ?? null,
         auditUrl: `${deps.publicBaseUrl}/audit/${row.id}`,
       });

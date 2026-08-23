@@ -1,5 +1,5 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
-import { paise, type Paise } from '../domain/money.js';
+import { isPaise, type Paise } from '../domain/money.js';
 import type { GatewayWebhookEvent, GatewayWebhookKind } from './types.js';
 
 /**
@@ -33,9 +33,14 @@ export function verifyRazorpaySignature(
 }
 
 /**
- * Which Razorpay events mean "money moved". `payment.captured` and
- * `payment_link.paid` both arrive for a Payment Link purchase, so the handler
- * must be idempotent (Razorpay also redelivers on non-2xx).
+ * Which Razorpay events mean "money moved".
+ *
+ * These are *Razorpay's* names. Note `order.paid`: we have an audit event
+ * spelled identically, which is exactly why raw names are namespaced before
+ * they are written anywhere (see `namespaceGatewayEvent`).
+ *
+ * A Payment Link purchase fires more than one of these, and Razorpay redelivers
+ * on any non-2xx, so the handler above must be idempotent.
  */
 const SUCCESS_EVENTS = new Set(['payment_link.paid', 'payment.captured', 'order.paid']);
 const FAILURE_EVENTS = new Set(['payment.failed']);
@@ -46,13 +51,23 @@ export function classifyRazorpayEvent(rawEvent: string): GatewayWebhookKind {
   return 'other';
 }
 
+export class WebhookParseError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'WebhookParseError';
+  }
+}
+
 function asRecord(value: unknown): Record<string, unknown> | null {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : null;
 }
 
-function entity(payload: Record<string, unknown> | null, key: string): Record<string, unknown> | null {
+function entity(
+  payload: Record<string, unknown> | null,
+  key: string,
+): Record<string, unknown> | null {
   const slot = asRecord(payload?.[key]);
   return asRecord(slot?.['entity']);
 }
@@ -62,16 +77,23 @@ function str(source: Record<string, unknown> | null, key: string): string | null
   return typeof value === 'string' && value !== '' ? value : null;
 }
 
+/**
+ * Read a paise amount, or throw.
+ *
+ * An absent amount is `null` — legitimate for events that carry none. An amount
+ * that is *present but not a valid paise value* is a `WebhookParseError`, never
+ * a `MoneyError`: the caller answers a signed-but-unparseable body 200/ignored,
+ * whereas an escaping error would 5xx and make Razorpay redeliver it forever.
+ */
 function amount(source: Record<string, unknown> | null, key: string): Paise | null {
   const value = source?.[key];
-  return typeof value === 'number' ? paise(value) : null;
-}
-
-export class WebhookParseError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'WebhookParseError';
+  if (value === undefined || value === null) return null;
+  if (!isPaise(value)) {
+    throw new WebhookParseError(
+      `Webhook amount is not a non-negative integer number of paise: ${JSON.stringify(value)}`,
+    );
   }
+  return value;
 }
 
 /**
@@ -79,8 +101,8 @@ export class WebhookParseError extends Error {
  *
  * The domain Order id is recovered from whichever field carried it out: the
  * Payment Link's `reference_id`, the gateway order's `receipt`, or the `notes`
- * map we set at creation. All three are set by `RazorpayGateway`, so any one of
- * them arriving is enough.
+ * map we set at creation. All three originate from us, so any one arriving is
+ * enough — and none of them is a guess.
  */
 export function parseRazorpayWebhook(rawBody: string): GatewayWebhookEvent {
   let body: unknown;
@@ -102,10 +124,12 @@ export function parseRazorpayWebhook(rawBody: string): GatewayWebhookEvent {
   const gatewayOrder = entity(payload, 'order');
 
   const notes =
-    asRecord(payment?.['notes']) ?? asRecord(gatewayOrder?.['notes']) ?? asRecord(paymentLink?.['notes']);
+    asRecord(payment?.['notes']) ??
+    asRecord(gatewayOrder?.['notes']) ??
+    asRecord(paymentLink?.['notes']);
 
   const reference =
-    str(paymentLink, 'reference_id') ?? str(gatewayOrder, 'receipt') ?? str(notes, 'orderId');
+    str(paymentLink, 'reference_id') ?? str(notes, 'orderId') ?? str(gatewayOrder, 'receipt');
 
   return {
     kind: classifyRazorpayEvent(rawEvent),
@@ -115,6 +139,7 @@ export function parseRazorpayWebhook(rawBody: string): GatewayWebhookEvent {
       str(gatewayOrder, 'id') ?? str(payment, 'order_id') ?? str(paymentLink, 'order_id'),
     gatewayPaymentId: str(payment, 'id'),
     gatewayPaymentLinkId: str(paymentLink, 'id'),
-    amountPaise: amount(payment, 'amount') ?? amount(paymentLink, 'amount') ?? amount(gatewayOrder, 'amount'),
+    amountPaise:
+      amount(payment, 'amount') ?? amount(paymentLink, 'amount') ?? amount(gatewayOrder, 'amount'),
   };
 }

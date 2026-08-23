@@ -1,22 +1,24 @@
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import express, { type Express, type Request, type Response } from 'express';
+import express, { type Express, type NextFunction, type Request, type Response } from 'express';
 import { MERCHANT_NAME } from '../config.js';
-import type { Database } from '../db/client.js';
+import type { StorefrontDeps } from '../deps.js';
 import { missingHappyPathSteps } from '../domain/auditEvents.js';
 import { readAuditChain } from '../domain/auditLog.js';
 import { applyGatewayWebhook, findOrderById, toOrderStatusView } from '../domain/orders.js';
-import { WebhookParseError, RAZORPAY_SIGNATURE_HEADER } from '../gateway/razorpayWebhook.js';
-import type { PaymentGateway } from '../gateway/types.js';
+import { RAZORPAY_SIGNATURE_HEADER, WebhookParseError } from '../gateway/razorpayWebhook.js';
 import { createMcpServer } from '../mcp/server.js';
 
-export interface AppDeps {
-  readonly db: Database;
-  readonly gateway: PaymentGateway;
-  readonly merchantId: string;
-  readonly publicBaseUrl: string;
+/** Escape text destined for HTML. Nothing user-influenced is interpolated raw. */
+function escapeHtml(value: string): string {
+  return value
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
 }
 
-export function createApp(deps: AppDeps): Express {
+export function createApp(deps: StorefrontDeps): Express {
   const app = express();
   app.disable('x-powered-by');
 
@@ -46,22 +48,22 @@ export function createApp(deps: AppDeps): Express {
         event = deps.gateway.parseWebhookEvent(rawBody);
       } catch (error) {
         if (error instanceof WebhookParseError) {
-          res.status(400).json({ error: 'unparseable_body', message: error.message });
+          // Signed by us, so genuinely from Razorpay — but unintelligible, and
+          // it will be just as unintelligible next time. A non-2xx would make
+          // Razorpay redeliver it forever, so acknowledge and move on. Logged
+          // loudly because a body we cannot read is an integration problem.
+          console.error('[agent-store] unparseable signed webhook', error.message);
+          res.status(200).json({ received: true, result: 'ignored', reason: 'unparseable' });
           return;
         }
         throw error;
       }
 
-      const outcome = await applyGatewayWebhook(
-        deps.db,
-        deps.merchantId,
-        event,
-        deps.gateway.name,
-      );
+      const outcome = await applyGatewayWebhook(deps.db, deps.merchantId, event, deps.gateway.name);
 
-      // Always 200 on a verified event, including `unmatched`: a non-2xx makes
-      // Razorpay redeliver, and redelivering an event we can never match is noise.
-      res.status(200).json({ received: true, event: event.rawEvent, ...outcome });
+      // Always 200 on a verified event, including `unmatched` and `anomaly`: a
+      // non-2xx makes Razorpay redeliver, and redelivery fixes neither.
+      res.status(200).json({ received: true, gatewayEvent: event.rawEvent, ...outcome });
     },
   );
 
@@ -119,11 +121,13 @@ export function createApp(deps: AppDeps): Express {
       return;
     }
 
+    const missingSteps = missingHappyPathSteps(events);
     res.json({
       orderId,
       order: order === null ? null : toOrderStatusView(order),
-      complete: missingHappyPathSteps(events).length === 0,
-      missingSteps: missingHappyPathSteps(events),
+      complete: missingSteps.length === 0,
+      missingSteps,
+      anomalies: events.filter((event) => event.type === 'order.anomaly_detected').length,
       events: events.map((event) => ({
         seq: event.seq,
         type: event.type,
@@ -137,7 +141,13 @@ export function createApp(deps: AppDeps): Express {
   // Where Razorpay returns the human's browser after they approve the link.
   // Purely cosmetic: the webhook, not this redirect, is what marks the Order paid.
   app.get('/payment-callback', (req: Request, res: Response) => {
-    const orderId = typeof req.query['orderId'] === 'string' ? req.query['orderId'] : null;
+    const raw = req.query['orderId'];
+    const orderId = typeof raw === 'string' ? raw : null;
+    // Anyone can craft this URL, so the value is escaped for HTML and
+    // percent-encoded for the href — never interpolated raw.
+    const safeText = orderId === null ? null : escapeHtml(orderId);
+    const safeHref = orderId === null ? null : escapeHtml(encodeURIComponent(orderId));
+
     res
       .status(200)
       .type('html')
@@ -145,11 +155,11 @@ export function createApp(deps: AppDeps): Express {
         `<!doctype html><meta charset="utf-8"><title>Payment received</title>` +
           `<body style="font-family:system-ui;max-width:34rem;margin:4rem auto;line-height:1.6">` +
           `<h1>Thanks — payment approved</h1>` +
-          `<p>${MERCHANT_NAME} has been notified. Your agent can now call ` +
+          `<p>${escapeHtml(MERCHANT_NAME)} has been notified. Your agent can now call ` +
           `<code>get_order_status</code>.</p>` +
-          (orderId === null
+          (safeText === null
             ? ''
-            : `<p>Order <code>${orderId}</code> — <a href="/audit/${encodeURIComponent(orderId)}">audit trail</a></p>`) +
+            : `<p>Order <code>${safeText}</code> — <a href="/audit/${safeHref}">audit trail</a></p>`) +
           `</body>`,
       );
   });
@@ -169,7 +179,7 @@ export function createApp(deps: AppDeps): Express {
 
   // Express 5 forwards rejected async handlers here. Details stay server-side:
   // a buyer agent gets a code it can act on, not a stack trace.
-  app.use((error: unknown, _req: Request, res: Response, _next: express.NextFunction) => {
+  app.use((error: unknown, _req: Request, res: Response, _next: NextFunction) => {
     console.error('[agent-store] unhandled request error', error);
     if (!res.headersSent) {
       res.status(500).json({ error: 'internal_error' });

@@ -1,7 +1,7 @@
 import { and, asc, eq } from 'drizzle-orm';
 import type { Executor } from '../db/client.js';
 import { products, variants } from '../db/schema.js';
-import { formatPaise, paise, type Paise } from './money.js';
+import { moneyView, paise, type MoneyView } from './money.js';
 
 /**
  * Catalog reads. T1 has one published Product with one implicit default
@@ -15,39 +15,28 @@ export interface VariantView {
   readonly productTitle: string;
   readonly description: string | null;
   readonly label: string | null;
-  readonly pricePaise: Paise;
-  readonly priceDisplay: string;
-  readonly currency: string;
+  readonly price: MoneyView;
   readonly stock: number;
 }
 
-export class VariantNotFoundError extends Error {
-  constructor(variantId: string) {
-    super(`No published Variant with id ${variantId}`);
-    this.name = 'VariantNotFoundError';
-  }
-}
-
-function toView(row: {
+interface VariantRowShape {
   variantId: string;
   productId: string;
   productTitle: string;
   description: string | null;
   label: string | null;
   pricePaise: number;
-  currency: string;
   stock: number;
-}): VariantView {
-  const pricePaise = paise(row.pricePaise);
+}
+
+function toView(row: VariantRowShape): VariantView {
   return {
     variantId: row.variantId,
     productId: row.productId,
     productTitle: row.productTitle,
     description: row.description,
     label: row.label,
-    pricePaise,
-    priceDisplay: formatPaise(pricePaise),
-    currency: row.currency,
+    price: moneyView(paise(row.pricePaise)),
     stock: row.stock,
   };
 }
@@ -59,7 +48,6 @@ const selection = {
   description: products.description,
   label: variants.label,
   pricePaise: variants.pricePaise,
-  currency: variants.currency,
   stock: variants.stock,
 };
 
@@ -77,7 +65,7 @@ export async function listPublishedVariants(
     .from(variants)
     .innerJoin(products, eq(variants.productId, products.id))
     .where(and(eq(products.merchantId, merchantId), eq(products.status, 'published')))
-    .orderBy(asc(products.title), asc(variants.label));
+    .orderBy(asc(products.title), asc(variants.label), asc(variants.id));
   return rows.map(toView);
 }
 
@@ -105,7 +93,8 @@ export async function findPublishedVariant(
 /**
  * The Variant a `checkout` call with no explicit variant means. T1's demo
  * merchant has exactly one, which is what makes the walking skeleton a single
- * tool call.
+ * tool call. `listPublishedVariants` orders deterministically, so "the first
+ * one" is stable rather than whatever the planner happened to return.
  */
 export async function defaultPublishedVariant(
   executor: Executor,
