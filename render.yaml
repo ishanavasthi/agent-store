@@ -1,0 +1,52 @@
+# Render blueprint — one free web service (PLAN §3: deployed from day 1).
+#
+# The public HTTPS URL is not a nicety: Razorpay needs somewhere to POST
+# webhooks, and a claude.ai custom connector needs somewhere to reach MCP.
+#
+# Migrations run in the build step rather than at boot so a deploy can never
+# serve new code against an old schema, and so a failed migration fails the
+# deploy instead of crash-looping the service. (`preDeployCommand`, the tidier
+# home for this, is not available on the free plan.) The seed is idempotent
+# (onConflictDoNothing), so re-running it on every deploy is a no-op.
+
+services:
+  - type: web
+    name: agent-store
+    runtime: node
+    plan: free
+    region: singapore
+    branch: main
+    buildCommand: npm ci && npm run build && npm run db:migrate:prod && npm run db:seed:prod
+    startCommand: npm start
+    healthCheckPath: /healthz
+    autoDeployTrigger: commit
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+
+      # Render injects PORT itself; declared here only so the value is visible.
+      - key: PORT
+        value: "10000"
+
+      # --- Set by hand in the Render dashboard (never in git) ---------------
+      # Neon POOLED connection string — the host must contain `-pooler`.
+      # The WebSocket driver it enables is what lets audit events commit in the
+      # same transaction as their state change (ADR-0003).
+      - key: DATABASE_URL
+        sync: false
+
+      # Razorpay TEST keys only. The gateway refuses to start on a live key.
+      - key: RAZORPAY_KEY_ID
+        sync: false
+      - key: RAZORPAY_KEY_SECRET
+        sync: false
+
+      # Must match the secret typed into Razorpay's webhook configuration for
+      # {PUBLIC_BASE_URL}/webhooks/razorpay.
+      - key: RAZORPAY_WEBHOOK_SECRET
+        sync: false
+
+      # This service's own https://<name>.onrender.com origin, no trailing
+      # slash. Set after the first deploy, when Render has assigned the URL.
+      - key: PUBLIC_BASE_URL
+        sync: false
