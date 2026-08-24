@@ -1,4 +1,4 @@
-import { and, asc, eq, ne, type SQL } from 'drizzle-orm';
+import { and, asc, eq, isNull, ne, type SQL } from 'drizzle-orm';
 import type { Database, Executor } from '../db/client.js';
 import { orders, type OrderRow, type OrderStatus } from '../db/schema.js';
 import type { GatewayWebhookEvent } from '../gateway/types.js';
@@ -214,25 +214,41 @@ export async function applyGatewayWebhook(
     }
 
     // --- Learn the real gateway order id, exactly once ----------------------
+    // Razorpay fires several webhooks for one purchase (payment_link.paid,
+    // payment.captured, order.paid) effectively at once. Testing the value read
+    // earlier in this transaction and then writing unconditionally is a
+    // read-then-write race: every concurrent webhook sees NULL and every one of
+    // them links, producing one `order_linked` event per webhook for a single
+    // real linking. The guard therefore lives in the WHERE clause, exactly as
+    // it does for the paid transition below: under READ COMMITTED the losers
+    // block on the row lock, re-evaluate `IS NULL` after the winner commits,
+    // and match nothing.
     if (event.gatewayOrderId !== null) {
-      if (order.gatewayOrderId === null) {
-        await tx
-          .update(orders)
-          .set({ gatewayOrderId: event.gatewayOrderId, updatedAt: new Date() })
-          .where(eq(orders.id, order.id));
+      const [linked] = await tx
+        .update(orders)
+        .set({ gatewayOrderId: event.gatewayOrderId, updatedAt: new Date() })
+        .where(and(eq(orders.id, order.id), isNull(orders.gatewayOrderId)))
+        .returning();
+
+      if (linked !== undefined) {
         await appendAuditEvent(tx, {
           type: 'gateway.order_linked',
           merchantId,
           orderId: order.id,
           payload: { gateway: gatewayName, gatewayEvent, gatewayOrderId: event.gatewayOrderId },
         });
-      } else if (order.gatewayOrderId !== event.gatewayOrderId) {
-        // Never overwrite. A second, different gateway order for one domain
-        // Order means we do not know which object the money hit.
-        return anomaly('gateway_order_id_conflict', {
-          recordedGatewayOrderId: order.gatewayOrderId,
-          webhookGatewayOrderId: event.gatewayOrderId,
-        });
+      } else {
+        // Already linked — by an earlier webhook or a concurrent one. Re-read
+        // rather than trusting the stale snapshot, so a genuine conflict is
+        // still caught. Never overwrite: a second, different gateway order for
+        // one domain Order means we do not know which object the money hit.
+        const current = await tx.query.orders.findFirst({ where: eq(orders.id, order.id) });
+        if (current !== undefined && current.gatewayOrderId !== event.gatewayOrderId) {
+          return anomaly('gateway_order_id_conflict', {
+            recordedGatewayOrderId: current.gatewayOrderId,
+            webhookGatewayOrderId: event.gatewayOrderId,
+          });
+        }
       }
     }
 
