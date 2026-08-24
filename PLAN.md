@@ -37,7 +37,7 @@ India's payment rails are agent-ready — UPI Reserve Pay is live, agentic check
 | Name / repo | **agent-store** (this repo, public at release) |
 | Stack | **TypeScript end-to-end**: Node 22 + TS everywhere. Express + official MCP TypeScript SDK (Streamable HTTP) + Razorpay Node SDK. React (Vite) SPA served by the same Express app for audit viewer + merchant confirmation. |
 | Persistence | **Neon Postgres** (free tier, no expiry) + Drizzle ORM. (Not SQLite: Render's filesystem is ephemeral and the audit log must survive redeploys. Not Render free Postgres: 30-day deletion cliff.) |
-| Deployment | **Deployed from day 1**: Render free web service (public URL for webhooks + remote MCP) kept warm by a GitHub Actions ping workflow (every 10 min). |
+| Deployment | **Deployed from day 1**, always-on: **Railway** is primary (no spin-down, so no cold start in the demo path; $5 trial credit covers the ship window, $5/mo after). **Render free** stays deployed as the K1 fallback, kept warm by the GitHub Actions ping (every 10 min). Both run the same commit against the same Neon database. |
 | Hero | **Merchant-side infra**: messy catalog in → agent-transactable merchant out. Buyer agent is a demo counterpart only. |
 | Buyer-facing surface | **MCP-first + ACP-flavored REST twin** — same core, two protocol faces, plus `/.well-known/agent-store.json` discovery doc. |
 | MCP auth | **Authless transport; identity in-protocol.** `register_agent` issues an agent token passed as a tool argument; the mandate chain + caps are the security layer. (Static-header auth on claude.ai connectors is beta-gated; OAuth+DCR buys nothing this project is about.) |

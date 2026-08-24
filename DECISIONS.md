@@ -94,6 +94,15 @@ Rejected: generated captions; stock-photo sourcing (licensing friction).
 Revisit when: never within this build.
 Tier: Verified (user decision, 2026-08-22)
 
+## 2026-08-24: Railway (always-on) is the primary deployment; Render free stays as the K1 fallback — supersedes the Render deployment decision above
+Why: Render's free web service spins down after ~15 minutes idle, so the first tool call from a judge or a claude.ai connector pays a cold start. The GitHub Actions keep-warm ping mitigates but does not eliminate this — scheduled workflows are themselves delayed under load. Railway does not sleep. Railway has no free tier, but its $5 one-time trial credit (valid 30 days) covers the entire demo window (ship Sep 2–3) at zero cost; after that it is $5/mo Hobby or services pause. Render free stays deployed and configured at no cost as the K1 fallback demo path, so the kill criterion keeps a live target.
+Deployed URLs: Railway `https://agent-store-production-8345.up.railway.app` (primary, Razorpay webhook points here); Render `https://agent-store-e4ka.onrender.com` (fallback).
+Rejected: Render Starter ($7/mo — dearer than Railway Hobby and still paid); staying on Render free (cold start sits in the demo path); Fly.io (migration cost, no clear win over Railway).
+Revisit when: the trial credit runs out — either pay $5/mo Hobby or fall back to Render free + ping.
+Tier: Verified (user decision, 2026-08-24)
+
+---
+
 # Domain-model grilling round (2026-08-23) — vocabulary now canonical in CONTEXT.md
 
 ## 2026-08-23: An Agent is its registration — no stable buyer identity in v1
