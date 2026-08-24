@@ -2,7 +2,8 @@
   "$schema": "https://railway.com/railway.schema.json",
   "build": {
     "builder": "NIXPACKS",
-    "buildCommand": "npm ci && npm run build && npm run db:migrate:prod && npm run db:seed:prod"
+    "buildCommand": "npm run build && npm run db:migrate:prod && npm run db:seed:prod",
+    "_comment": "Nixpacks runs `npm ci` itself during install; repeating it here fails with EBUSY because node_modules/.cache is a mounted build cache. Render (render.yaml) does need the explicit npm ci \u2014 its build command is the whole build."
   },
   "deploy": {
     "startCommand": "npm start",
