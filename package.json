@@ -5,8 +5,10 @@
   "description": "Merchant-side agentic commerce infrastructure",
   "type": "module",
   "engines": {
-    "node": "22.x"
+    "node": "22.x",
+    "npm": "10.x"
   },
+  "packageManager": "npm@10.9.3",
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
