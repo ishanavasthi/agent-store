@@ -1,4 +1,5 @@
 import Razorpay from 'razorpay';
+import type { PaymentLinks } from 'razorpay/dist/types/paymentLink.js';
 import { paise } from '../domain/money.js';
 import { parseRazorpayWebhook, verifyRazorpaySignature } from './razorpayWebhook.js';
 import {
@@ -53,7 +54,14 @@ export class RazorpayGateway implements PaymentGateway {
    */
   async createPaymentLink(params: CreatePaymentLinkParams): Promise<PaymentLink> {
     try {
-      const created = await this.#client.paymentLink.create({
+      // v1 collects no buyer contact details — the human arrives via the URL
+      // their agent handed them, so there is nobody to notify and no PII to hold.
+      // `customer` must be OMITTED, not sent as `{}`: the live API rejects an
+      // empty object with "incorrect JSON object received - faulty key:
+      // customer". The SDK's types declare `customer` as required, which is
+      // wrong against the real API, so the payload is typed without it and cast
+      // once here rather than weakening the whole call site.
+      const payload: Omit<PaymentLinks.RazorpayPaymentLinkCreateRequestBody, 'customer'> = {
         amount: params.amountPaise,
         currency: params.currency,
         description: params.description,
@@ -61,12 +69,13 @@ export class RazorpayGateway implements PaymentGateway {
         reference_id: params.reference,
         callback_url: params.callbackUrl,
         callback_method: 'get',
-        // v1 collects no buyer contact details — the human arrives via the URL
-        // their agent handed them, so there is nobody to notify and no PII to hold.
-        customer: {},
         notify: { sms: false, email: false },
         notes: { ...params.notes },
-      });
+      };
+
+      const created = await this.#client.paymentLink.create(
+        payload as PaymentLinks.RazorpayPaymentLinkCreateRequestBody,
+      );
 
       const hintedOrderId = (created as { order_id?: unknown }).order_id;
 
@@ -79,6 +88,14 @@ export class RazorpayGateway implements PaymentGateway {
           typeof hintedOrderId === 'string' && hintedOrderId !== '' ? hintedOrderId : null,
       };
     } catch (error) {
+      // Razorpay nests the useful part under `error.error.description`; without
+      // this line a rejected payload surfaces to the operator as nothing but
+      // "Failed to create Payment Link", which is undiagnosable from logs.
+      const detail = (error as { error?: { description?: unknown; code?: unknown } }).error;
+      console.error('[agent-store] Razorpay rejected the Payment Link', {
+        code: detail?.code ?? null,
+        description: detail?.description ?? String(error),
+      });
       throw new GatewayError('Failed to create Payment Link at Razorpay', error);
     }
   }
