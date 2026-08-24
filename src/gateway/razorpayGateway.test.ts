@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { paise } from '../domain/money.js';
 
 const createSpy = vi.fn();
 
@@ -20,14 +21,14 @@ function gateway() {
   });
 }
 
-const params = {
-  amountPaise: 129900,
+const params: Parameters<InstanceType<typeof RazorpayGateway>['createPaymentLink']>[0] = {
+  amountPaise: paise(129900),
   currency: 'INR',
   description: 'Oversized Heavyweight Tee',
   reference: 'ord_abc',
   callbackUrl: 'https://example.test/paid',
   notes: { orderId: 'ord_abc' },
-} as Parameters<InstanceType<typeof RazorpayGateway>['createPaymentLink']>[0];
+};
 
 describe('createPaymentLink payload', () => {
   it('omits `customer` entirely rather than sending an empty object', async () => {
