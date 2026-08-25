@@ -202,3 +202,15 @@ Why: the repository should stand as a real project on its own terms. All submiss
 Rejected: submission framing in PLAN.md/README (original rev 1 plan).
 Revisit when: never.
 Tier: Verified (user decision, 2026-08-22)
+
+## 2026-08-26: Gateway stub is composed at test/eval composition points; no GATEWAY env switch
+Why: T2's acceptance criterion "real-rail code paths use the real implementation unchanged" is a constraint, not a feature — the deployed server stays Razorpay-only (`src/index.ts` constructs `RazorpayGateway` unconditionally), and every consumer of the stub (the integration tests today, the T15 eval runner next) constructs `StubGateway` at its own composition root. Which gateway ran is a property of the code path, never of deployment state — so the deployed demo can never silently run fake rails.
+Rejected: `GATEWAY=stub|razorpay` env switch (speculative config plumbing; makes Razorpay creds conditionally optional and adds a misconfiguration mode).
+Revisit when: T15 turns out to need the deployed server itself running against the stub (nothing currently suggests it).
+Tier: Likely (Claude ruling during T2, 2026-08-26 — flagged for veto; plan: docs/superpowers/plans/2026-08-26-t2-gateway-stub.md)
+
+## 2026-08-26: In-process tests run on embedded PGlite with the real committed migrations
+Why: T2's "happy-path purchase fully in-process with no network calls" needs a real Postgres without a socket. PGlite (WASM, devDependency only) runs the committed drizzle migrations — including 0001's append-only audit triggers — so integration tests exercise the same SQL, transactions, and trigger behavior as Neon. It stays out of the shipped build by construction: `src/testSupport/` is excluded from `tsconfig.build.json`, the PGlite instance is cast to the app's `Database` type exactly once (documented, in `src/testSupport/pgliteDatabase.ts`), and `dist/` is verified free of pglite.
+Rejected: a Neon test database (network dependency, not CI-hermetic, fails the criterion); widening the production `Database` type to cover both drivers (prod type churn for a test concern); mocking drizzle (proves nothing about the audit-trigger claims).
+Revisit when: a Neon-vs-PGlite behavior divergence surfaces (none known).
+Tier: Likely (Claude ruling during T2, 2026-08-26 — flagged for veto; plan: docs/superpowers/plans/2026-08-26-t2-gateway-stub.md)
