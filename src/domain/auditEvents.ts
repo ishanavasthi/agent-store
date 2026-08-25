@@ -111,7 +111,13 @@ export type AnomalyReason =
   /** A second, different gateway order id for an Order that already has one. */
   | 'gateway_order_id_conflict'
   /** More than one Order matched a webhook. */
-  | 'ambiguous_webhook_match';
+  | 'ambiguous_webhook_match'
+  /**
+   * A mandate-backed Order was paid but the merchant has no signing key, so no
+   * Receipt could be minted. The paid transition stands; the missing proof is
+   * recorded instead of thrown — a webhook redelivery would fix nothing.
+   */
+  | 'missing_merchant_signing_key';
 
 /**
  * Qualify a gateway's raw event name so it can never collide with one of ours.

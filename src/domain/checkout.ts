@@ -1,130 +1,267 @@
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import type { StorefrontDeps } from '../deps.js';
-import type { OrderStatus } from '../db/schema.js';
-import { orders } from '../db/schema.js';
+import type { AgentRow, OrderStatus } from '../db/schema.js';
+import { intentMandates, orderItems, orders, paymentMandates } from '../db/schema.js';
 import { appendAuditEvent } from './auditLog.js';
-import { defaultPublishedVariant, findPublishedVariant, type VariantView } from './catalog.js';
+import { findPublishedVariant, type VariantView } from './catalog.js';
 import { newId, toGatewayReference } from './ids.js';
-import { moneyView, multiplyPaise, type MoneyView } from './money.js';
-import { Refusal, ValidationError } from './refusal.js';
+import {
+  computePriceHash,
+  hashMandate,
+  signMandate,
+  verifyMandateChain,
+  verifyMandateSignature,
+  type CartItem,
+  type CartMandatePayload,
+  type IntentMandatePayload,
+  type PaymentMandatePayload,
+} from './mandates.js';
+import { requireCartMandate, requireMerchantSigningKey, type CartLineView } from './mandateFlow.js';
+import { moneyView, paise, type MoneyView } from './money.js';
+import { Refusal, type RefusalPayload } from './refusal.js';
 
 /**
- * Checkout — the walking-skeleton path (T1).
- *
- * Shape to preserve: this reads as four ordered phases —
- *   1. validate the request,
- *   2. resolve what is being bought and refuse on policy,
- *   3. **the trust gate** (empty in T1),
+ * `submit_payment` — the money path, and the only one (DECISIONS.md 2026-08-26
+ * "the mandate chain is the only purchase path"; T1's tokens-only checkout is
+ * gone). Shape preserved from the walking skeleton: four ordered phases —
+ *   1. resolve the Cart mandate being paid,
+ *   2. compose and custodially sign the Payment mandate,
+ *   3. **the trust gate** — verify the whole chain; a Refusal returns from
+ *      here, before any Order exists and before the gateway is ever touched,
  *   4. create the domain Order, then the one gateway artifact.
- *
- * T3/T4 insert mandate-chain verification, Budget/Cap enforcement, idempotency
- * and price-hash pinning at phase 3 — strictly *before* any call reaches the
- * gateway, so a Refusal always means zero money moved. That ordering is the
- * whole reason the gateway call lives at the bottom of this function rather
- * than interleaved with the Order write.
  *
  * ADR-0003: every state change below commits in the same transaction as its
  * audit event, and the *attempt* at each external call is recorded before the
  * call is made — so a crash mid-flight leaves a trace rather than a silence.
  */
 
-export interface CheckoutRequest {
-  readonly merchantId: string;
-  /** Omitted means "the merchant's single published Variant" (T1 convenience). */
-  readonly variantId?: string | undefined;
-  readonly quantity: number;
+export interface SubmitPaymentRequest {
+  /** The `cartHash` returned by create_cart. */
+  readonly cartHash: string;
+  /** Buyer-minted, scoped Agent×Merchant (DECISIONS 2026-08-23 idempotency). */
+  readonly idempotencyKey: string;
 }
 
-export interface CheckoutResult {
+export interface SubmitPaymentResult {
   readonly orderId: string;
   readonly status: OrderStatus;
   readonly total: MoneyView;
-  readonly quantity: number;
-  readonly variant: VariantView;
+  readonly items: readonly CartLineView[];
   readonly gatewayPaymentLinkId: string;
   /** The hosted link the human approves — the consent step. */
   readonly paymentLinkUrl: string;
+  readonly paymentMandate: {
+    readonly paymentHash: string;
+    readonly payload: PaymentMandatePayload;
+    readonly signature: string;
+  };
 }
 
-export async function checkout(
+export async function submitPayment(
   deps: StorefrontDeps,
-  request: CheckoutRequest,
-): Promise<CheckoutResult> {
+  agent: AgentRow,
+  request: SubmitPaymentRequest,
+): Promise<SubmitPaymentResult> {
   const { db, gateway, publicBaseUrl } = deps;
+  const merchantId = agent.merchantId;
 
-  // --- 1. Validate the request --------------------------------------------
-  // A malformed argument is a plain validation error — never a Refusal, which
-  // is reserved for policy (CONTEXT.md → Failure vocabulary).
-  if (!Number.isSafeInteger(request.quantity) || request.quantity < 1) {
-    throw new ValidationError('INVALID_QUANTITY', 'Quantity must be a positive integer');
+  // --- 1. Resolve the Cart mandate being paid ------------------------------
+  // An unknown or foreign cartHash is a bad reference — a validation error,
+  // never a Refusal (CONTEXT.md → Failure vocabulary).
+  const cartRow = await requireCartMandate(db, agent, request.cartHash);
+  const cart = cartRow.payload as CartMandatePayload;
+
+  // --- 2. Compose and custodially sign the Payment mandate ------------------
+  const paymentPayload: PaymentMandatePayload = {
+    agentId: agent.id,
+    merchantId,
+    cartHash: cartRow.hash,
+    idempotencyKey: request.idempotencyKey,
+    createdAt: new Date().toISOString(),
+  };
+  const paymentHash = hashMandate(paymentPayload);
+  const paymentSignature = signMandate(agent.privateKey, paymentPayload);
+
+  // --- 3. Trust gate --------------------------------------------------------
+  // Everything below runs strictly before the Order insert and before the
+  // first gateway audit event, so a Refusal here means zero money moved and
+  // the gateway was never contacted. Refusals are audited first (the
+  // `agent.refused` precedent: own transaction, orderId null), then thrown.
+  const refuse = async (payload: RefusalPayload): Promise<never> => {
+    const refusal = new Refusal(payload);
+    await db.transaction(async (tx) => {
+      await appendAuditEvent(tx, {
+        type: 'payment.refused',
+        merchantId,
+        orderId: null,
+        payload: {
+          code: refusal.code,
+          reason: refusal.reason,
+          recoverable: refusal.recoverable,
+          cartHash: cartRow.hash,
+          intentHash: cartRow.intentHash,
+          tool: 'submit_payment',
+        },
+      });
+    });
+    throw refusal;
+  };
+
+  // The chain's root must exist and belong to the same Agent. The cart row was
+  // only ever written pointing at a stored Intent, so a miss here is a broken
+  // chain — policy, not a bad reference.
+  const [intentRow] = await db
+    .select()
+    .from(intentMandates)
+    .where(and(eq(intentMandates.hash, cartRow.intentHash), eq(intentMandates.merchantId, merchantId)))
+    .limit(1);
+  if (intentRow === undefined || intentRow.agentId !== agent.id) {
+    return refuse({
+      code: 'INVALID_MANDATE',
+      reason: `Cart mandate ${cartRow.hash} points at no Intent mandate of this Agent's`,
+      recoverable: false,
+    });
   }
+  const intent = intentRow.payload as IntentMandatePayload;
 
-  // --- 2. Resolve what is being bought ------------------------------------
-  const variant =
-    request.variantId === undefined
-      ? await defaultPublishedVariant(db, request.merchantId)
-      : await findPublishedVariant(db, request.merchantId, request.variantId);
+  const merchantKey = await requireMerchantSigningKey(db, merchantId);
 
-  if (variant === null) {
-    throw new ValidationError(
-      'VARIANT_NOT_FOUND',
-      request.variantId === undefined
-        ? 'This merchant has no published Variant to sell'
-        : `No published Variant with id ${request.variantId}`,
-    );
-  }
-
-  if (variant.stock < request.quantity) {
-    // A Refusal: policy says no, before money moves. CONTEXT.md names
-    // out-of-stock as *the* pre-payment refusal case (as distinct from an
-    // Oversell, which is a shortfall found after capture). Recoverable — the
-    // Agent can buy fewer.
-    throw new Refusal({
-      code: 'OUT_OF_STOCK',
-      reason: `Only ${variant.stock} left of ${variant.productTitle}; ${request.quantity} requested`,
-      recoverable: variant.stock > 0,
+  // Stored signatures verify against the live public keys, and the hashes bind
+  // Intent → Cart → Payment with consistent totals. One changed byte anywhere
+  // breaks this (src/domain/keys.ts's contract).
+  const signaturesValid =
+    verifyMandateSignature(agent.publicKey, intent, intentRow.agentSignature) &&
+    verifyMandateSignature(agent.publicKey, cart, cartRow.agentSignature) &&
+    verifyMandateSignature(merchantKey.publicKey, cart, cartRow.merchantSignature);
+  const chain = verifyMandateChain(intent, cart, paymentPayload);
+  if (!signaturesValid || !chain.ok) {
+    return refuse({
+      code: 'INVALID_MANDATE',
+      reason: signaturesValid
+        ? `Mandate chain failed verification: ${chain.failures.join(', ')}`
+        : 'A stored mandate signature does not verify against its public key',
+      recoverable: false,
     });
   }
 
-  // --- 3. Trust gate -------------------------------------------------------
-  // T3's identity gate runs even earlier: `requireRegisteredAgent` refuses
-  // unregistered callers at the tool boundary (src/mcp/server.ts), before this
-  // function is entered. T4 fills this phase: verify the mandate chain, enforce
-  // Budget and Cap, check idempotency and the pinned price hash. A Refusal
-  // returns from here, before the gateway is ever touched.
+  // Re-pin the price hash against the CURRENT catalog. A Variant that has
+  // vanished from the published catalog since the Cart was signed cannot
+  // confirm its pinned price either — same refusal, same recovery.
+  const currentItems: Array<Pick<CartItem, 'variantId' | 'unitPricePaise'>> = [];
+  const variantViews = new Map<string, VariantView>();
+  for (const item of cart.items) {
+    const variant = await findPublishedVariant(db, merchantId, item.variantId);
+    if (variant === null) {
+      return refuse({
+        code: 'PRICE_CHANGED',
+        reason: `Variant ${item.variantId} is no longer published at the price this Cart pinned. Call create_cart again against the current catalog.`,
+        recoverable: true,
+      });
+    }
+    currentItems.push({ variantId: variant.variantId, unitPricePaise: variant.price.amountPaise });
+    variantViews.set(variant.variantId, variant);
+  }
+  if (computePriceHash(currentItems) !== cart.priceHash) {
+    return refuse({
+      code: 'PRICE_CHANGED',
+      reason:
+        'The catalog price of at least one item changed since this Cart was signed. ' +
+        'Call create_cart again to get a Cart mandate at the current prices.',
+      recoverable: true,
+    });
+  }
 
-  // --- 4. Create the domain Order -----------------------------------------
+  // Stock covers every line — the pre-payment check (an Oversell is the
+  // post-capture shortfall, found at fulfillment; don't mix the words).
+  for (const item of cart.items) {
+    const variant = variantViews.get(item.variantId)!;
+    if (variant.stock < item.quantity) {
+      return refuse({
+        code: 'OUT_OF_STOCK',
+        reason: `Only ${variant.stock} left of ${variant.productTitle}; ${item.quantity} requested`,
+        recoverable: variant.stock > 0,
+      });
+    }
+  }
+
+  // T5's enforcement slot (issue #6) — the checks land here, after the chain
+  // verifies and before any Order exists. Everything they need is already
+  // persisted: OVER_BUDGET reads `intent_mandates.budget_paise`, OVER_CAP sums
+  // paid Orders per Agent×Merchant via `orders.agent_id`, INTENT_CONSUMED
+  // guards `intent_mandates.consumed_by_order_id` in SQL, IDEMPOTENCY_REUSE
+  // rides the unique (agent_id, idempotency_key) index on payment_mandates.
+
+  // --- 4. Create the domain Order -------------------------------------------
   const orderId = newId('order');
-  const total = moneyView(multiplyPaise(variant.price.amountPaise, request.quantity));
+  const totalPaise = paise(cart.totalPaise);
+  const total = moneyView(totalPaise);
 
+  // Order, its line items, the Payment mandate row, and both audit events
+  // commit together (ADR-0003). The legacy single-variant columns on `orders`
+  // stay NULL — line items are `order_items` rows now (DECISIONS 2026-08-26).
   await db.transaction(async (tx) => {
     await tx.insert(orders).values({
       id: orderId,
-      merchantId: request.merchantId,
-      variantId: variant.variantId,
-      quantity: request.quantity,
-      unitPricePaise: variant.price.amountPaise,
-      amountPaise: total.amountPaise,
+      merchantId,
+      agentId: agent.id,
+      amountPaise: totalPaise,
       currency: total.currency,
       status: 'created',
     });
+    await tx.insert(orderItems).values(
+      cart.items.map((item) => ({
+        id: newId('orderItem'),
+        orderId,
+        variantId: item.variantId,
+        quantity: item.quantity,
+        unitPricePaise: item.unitPricePaise,
+      })),
+    );
+    await tx.insert(paymentMandates).values({
+      id: newId('paymentMandate'),
+      agentId: agent.id,
+      merchantId,
+      cartHash: cartRow.hash,
+      idempotencyKey: request.idempotencyKey,
+      payload: paymentPayload,
+      hash: paymentHash,
+      agentSignature: paymentSignature,
+      orderId,
+    });
     await appendAuditEvent(tx, {
-      type: 'order.created',
-      merchantId: request.merchantId,
+      type: 'payment.verified',
+      merchantId,
       orderId,
       payload: {
-        variantId: variant.variantId,
-        productTitle: variant.productTitle,
-        quantity: request.quantity,
-        unitPricePaise: variant.price.amountPaise,
-        amountPaise: total.amountPaise,
+        agentId: agent.id,
+        intentHash: intentRow.hash,
+        cartHash: cartRow.hash,
+        paymentHash,
+        amountPaise: totalPaise,
+      },
+    });
+    await appendAuditEvent(tx, {
+      type: 'order.created',
+      merchantId,
+      orderId,
+      payload: {
+        agentId: agent.id,
+        cartHash: cartRow.hash,
+        items: cart.items.map((item) => ({ ...item })),
+        amountPaise: totalPaise,
         currency: total.currency,
       },
     });
   });
 
   const reference = toGatewayReference(orderId);
-  const description = `${variant.productTitle}${variant.label === null ? '' : ` (${variant.label})`} × ${request.quantity}`;
+  const description = cart.items
+    .map((item) => {
+      const variant = variantViews.get(item.variantId)!;
+      const label = variant.label === null ? '' : ` (${variant.label})`;
+      return `${variant.productTitle}${label} × ${item.quantity}`;
+    })
+    .join(', ');
   const callbackUrl = `${publicBaseUrl}/payment-callback?orderId=${encodeURIComponent(orderId)}`;
 
   // Recorded *before* the call. If the process dies mid-request, the chain
@@ -132,12 +269,12 @@ export async function checkout(
   await db.transaction(async (tx) => {
     await appendAuditEvent(tx, {
       type: 'gateway.payment_link_attempted',
-      merchantId: request.merchantId,
+      merchantId,
       orderId,
       payload: {
         gateway: gateway.name,
         reference,
-        amountPaise: total.amountPaise,
+        amountPaise: totalPaise,
         currency: total.currency,
         callbackUrl,
       },
@@ -149,11 +286,11 @@ export async function checkout(
   // webhook rather than invented here.
   const paymentLink = await gateway.createPaymentLink({
     reference,
-    amountPaise: total.amountPaise,
+    amountPaise: totalPaise,
     currency: total.currency,
     description,
     callbackUrl,
-    notes: { orderId, merchantId: request.merchantId },
+    notes: { orderId, merchantId },
   });
 
   const status: OrderStatus = 'awaiting_payment';
@@ -170,7 +307,7 @@ export async function checkout(
       .where(eq(orders.id, orderId));
     await appendAuditEvent(tx, {
       type: 'gateway.payment_link_issued',
-      merchantId: request.merchantId,
+      merchantId,
       orderId,
       payload: {
         gateway: gateway.name,
@@ -189,9 +326,22 @@ export async function checkout(
     orderId,
     status,
     total,
-    quantity: request.quantity,
-    variant,
+    items: cart.items.map((item) => {
+      const variant = variantViews.get(item.variantId)!;
+      return {
+        variantId: item.variantId,
+        productTitle: variant.productTitle,
+        label: variant.label,
+        quantity: item.quantity,
+        unitPrice: moneyView(paise(item.unitPricePaise)),
+      };
+    }),
     gatewayPaymentLinkId: paymentLink.gatewayPaymentLinkId,
     paymentLinkUrl: paymentLink.url,
+    paymentMandate: {
+      paymentHash,
+      payload: paymentPayload,
+      signature: paymentSignature,
+    },
   };
 }

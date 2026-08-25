@@ -1,14 +1,28 @@
 import { and, asc, eq, isNull, ne, type SQL } from 'drizzle-orm';
 import type { Database, Executor } from '../db/client.js';
-import { orders, type OrderRow, type OrderStatus } from '../db/schema.js';
+import {
+  cartMandates,
+  merchants,
+  orderItems,
+  orders,
+  paymentMandates,
+  products,
+  receipts,
+  variants,
+  type OrderRow,
+  type OrderStatus,
+} from '../db/schema.js';
 import type { GatewayWebhookEvent } from '../gateway/types.js';
 import { namespaceGatewayEvent, type AnomalyReason } from './auditEvents.js';
 import { appendAuditEvent } from './auditLog.js';
+import { newId } from './ids.js';
+import { hashMandate, signMandate, type ReceiptPayload } from './mandates.js';
 import { moneyView, paise, type MoneyView } from './money.js';
 
 /**
  * Domain Order reads, and the one write that money depends on: marking an
- * Order paid when a verified gateway webhook says so.
+ * Order paid — and minting its merchant-signed Receipt — when a verified
+ * gateway webhook says so.
  */
 
 export async function findOrderById(
@@ -306,6 +320,166 @@ export async function applyGatewayWebhook(
       },
     });
 
+    // --- Mint the merchant-signed Receipt, exactly once ---------------------
+    // Guarded by the one-way paid UPDATE above: only the delivery that won the
+    // `status <> 'paid'` transition reaches this line, so Razorpay's
+    // near-simultaneous sibling webhooks (see engineering log) can never mint
+    // a second Receipt — the `already_paid` branch returned before it. Same
+    // transaction as `order.paid` (ADR-0003). Receipts exist only for
+    // mandate-backed Orders; a pre-T4 Order has no chain to prove, so it gets
+    // none (DECISIONS 2026-08-26).
+    const [paymentMandate] = await tx
+      .select()
+      .from(paymentMandates)
+      .where(eq(paymentMandates.orderId, order.id))
+      .limit(1);
+    if (paymentMandate !== undefined) {
+      const [merchantRow] = await tx
+        .select({ signingPrivateKey: merchants.signingPrivateKey })
+        .from(merchants)
+        .where(eq(merchants.id, merchantId))
+        .limit(1);
+      if (merchantRow === undefined || merchantRow.signingPrivateKey === null) {
+        // The Order IS paid — that already committed above and stands. What
+        // cannot happen is the signed proof, and a webhook handler must not
+        // throw for it (redelivery would fix nothing). Recorded loudly instead.
+        await appendAuditEvent(tx, {
+          type: 'order.anomaly_detected',
+          merchantId,
+          orderId: order.id,
+          payload: {
+            gateway: gatewayName,
+            gatewayEvent,
+            reason: 'missing_merchant_signing_key' satisfies AnomalyReason,
+            detail: 'Order paid but no merchant signing key exists to mint its Receipt',
+          },
+        });
+      } else {
+        const [cartRow] = await tx
+          .select({ intentHash: cartMandates.intentHash })
+          .from(cartMandates)
+          .where(eq(cartMandates.hash, paymentMandate.cartHash))
+          .limit(1);
+        if (cartRow === undefined) {
+          // Impossible by construction: submit_payment only stores a Payment
+          // mandate after resolving its Cart row. A miss means the mandate
+          // store was mutilated out-of-band — fail loudly, don't sign fiction.
+          throw new Error(
+            `Payment mandate ${paymentMandate.id} references no stored Cart mandate ${paymentMandate.cartHash}`,
+          );
+        }
+        const receiptPayload: ReceiptPayload = {
+          orderId: order.id,
+          intentHash: cartRow.intentHash,
+          cartHash: paymentMandate.cartHash,
+          paymentHash: paymentMandate.hash,
+          // The gateway-reported amount — asserted equal to the Order's above.
+          amountPaise: paise(event.amountPaise),
+          gatewayPaymentId: event.gatewayPaymentId ?? order.gatewayPaymentId ?? '',
+          issuedAt: paidAt.toISOString(),
+        };
+        const receiptHash = hashMandate(receiptPayload);
+        const merchantSignature = signMandate(merchantRow.signingPrivateKey, receiptPayload);
+        await tx.insert(receipts).values({
+          id: newId('receipt'),
+          merchantId,
+          orderId: order.id,
+          payload: receiptPayload,
+          hash: receiptHash,
+          merchantSignature,
+        });
+        await appendAuditEvent(tx, {
+          type: 'receipt.issued',
+          merchantId,
+          orderId: order.id,
+          payload: {
+            receiptHash,
+            intentHash: receiptPayload.intentHash,
+            cartHash: receiptPayload.cartHash,
+            paymentHash: receiptPayload.paymentHash,
+            amountPaise: receiptPayload.amountPaise,
+            gatewayPaymentId: receiptPayload.gatewayPaymentId,
+          },
+        });
+      }
+    }
+
     return { result: 'order_paid', orderId: order.id } as const;
   });
+}
+
+/** One purchased line of an Order, as `get_order_status` reports it. */
+export interface OrderItemView {
+  readonly variantId: string;
+  readonly productTitle: string;
+  readonly label: string | null;
+  readonly quantity: number;
+  readonly unitPrice: MoneyView;
+}
+
+/**
+ * An Order's line items, joined to their catalog rows for display. Deliberately
+ * NOT filtered to `published`: a purchase already made must keep reporting what
+ * it bought even after the merchant unpublishes the product.
+ */
+export async function listOrderItems(
+  executor: Executor,
+  orderId: string,
+): Promise<OrderItemView[]> {
+  const rows = await executor
+    .select({
+      variantId: orderItems.variantId,
+      productTitle: products.title,
+      label: variants.label,
+      quantity: orderItems.quantity,
+      unitPricePaise: orderItems.unitPricePaise,
+    })
+    .from(orderItems)
+    .innerJoin(variants, eq(orderItems.variantId, variants.id))
+    .innerJoin(products, eq(variants.productId, products.id))
+    .where(eq(orderItems.orderId, orderId))
+    .orderBy(asc(orderItems.variantId));
+  return rows.map((row) => ({
+    variantId: row.variantId,
+    productTitle: row.productTitle,
+    label: row.label,
+    quantity: row.quantity,
+    unitPrice: moneyView(paise(row.unitPricePaise)),
+  }));
+}
+
+/**
+ * The Receipt as the buyer retrieves it: payload, detached merchant signature,
+ * and the merchant public key — everything an independent verifier needs
+ * (`verifyMessage(merchantPublicKey, canonicalJson(payload), signature)`),
+ * because no other endpoint publishes the key yet.
+ */
+export interface OrderReceiptView {
+  readonly payload: ReceiptPayload;
+  readonly signature: string;
+  readonly merchantPublicKey: string;
+}
+
+export async function findOrderReceipt(
+  executor: Executor,
+  merchantId: string,
+  orderId: string,
+): Promise<OrderReceiptView | null> {
+  const rows = await executor
+    .select({
+      payload: receipts.payload,
+      signature: receipts.merchantSignature,
+      merchantPublicKey: merchants.signingPublicKey,
+    })
+    .from(receipts)
+    .innerJoin(merchants, eq(receipts.merchantId, merchants.id))
+    .where(and(eq(receipts.orderId, orderId), eq(receipts.merchantId, merchantId)))
+    .limit(1);
+  const row = rows[0];
+  if (row === undefined || row.merchantPublicKey === null) return null;
+  return {
+    payload: row.payload as ReceiptPayload,
+    signature: row.signature,
+    merchantPublicKey: row.merchantPublicKey,
+  };
 }

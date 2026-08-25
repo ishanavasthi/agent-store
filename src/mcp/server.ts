@@ -4,8 +4,14 @@ import { MERCHANT_NAME } from '../config.js';
 import type { StorefrontDeps } from '../deps.js';
 import { registerAgent, requireRegisteredAgent } from '../domain/agents.js';
 import { findPublishedVariant, listPublishedVariants } from '../domain/catalog.js';
-import { checkout } from '../domain/checkout.js';
-import { findOrderById, toOrderStatusView } from '../domain/orders.js';
+import { submitPayment } from '../domain/checkout.js';
+import { createCart, declareIntent } from '../domain/mandateFlow.js';
+import {
+  findOrderById,
+  findOrderReceipt,
+  listOrderItems,
+  toOrderStatusView,
+} from '../domain/orders.js';
 import { Refusal, ValidationError } from '../domain/refusal.js';
 
 /**
@@ -78,13 +84,21 @@ export function createMcpServer(deps: StorefrontDeps): McpServer {
     { name: 'agent-store', version: '0.1.0' },
     {
       instructions:
-        `Storefront for ${MERCHANT_NAME}. Prices are integer paise (INR). ` +
-        `Call get_product to see what is for sale. Before buying, call register_agent ` +
-        `once, declaring your Cap (spend ceiling, integer paise): it returns the ` +
-        `agentToken that checkout and get_order_status require on every call. ` +
-        `checkout does not move money: it returns a Razorpay-hosted payment link ` +
-        `that the human must approve — that approval is the only way money moves. ` +
-        `Poll get_order_status afterwards to see the order flip to paid.`,
+        `Storefront for ${MERCHANT_NAME}. All prices are integer paise (INR): ` +
+        `129900 means ₹1,299.00 — never send rupees or decimals. Buying is a ` +
+        `signed mandate chain, one tool per step, in order: (1) get_product to ` +
+        `see the Variants for sale. (2) register_agent once, declaring your Cap ` +
+        `(spend ceiling, integer paise) — it returns the agentToken every later ` +
+        `call requires. (3) declare_intent with what you want and your budgetPaise ` +
+        `for this purchase — returns an intentHash. (4) create_cart with that ` +
+        `intentHash and the items — returns an immutable Cart mandate signed by ` +
+        `both sides, and its cartHash. (5) submit_payment with the cartHash and a ` +
+        `fresh UUID you mint as idempotencyKey — the server verifies the whole ` +
+        `chain and returns a Razorpay-hosted payment link. No money moves until ` +
+        `the human approves that link; their approval is the only way money moves. ` +
+        `(6) Poll get_order_status until status is "paid" — the response then ` +
+        `carries the merchant-signed Receipt proving your mandate chain led to ` +
+        `exactly this charge.`,
     },
   );
 
@@ -140,47 +154,146 @@ export function createMcpServer(deps: StorefrontDeps): McpServer {
   );
 
   server.registerTool(
-    'checkout',
+    'declare_intent',
     {
-      title: 'Checkout',
+      title: 'Declare intent',
       description:
-        'Create an order and return a Razorpay-hosted payment link for the human to approve. ' +
-        'No money moves until the human approves that link. Requires the agentToken from ' +
-        "register_agent. Omit variantId to buy the merchant's only published Variant.",
+        'Step 1 of buying: declare WHAT you want and the most you authorize spending on it. ' +
+        'The merchant signs an Intent mandate with your custodial key and returns its ' +
+        'intentHash — pass that to create_cart next. Requires the agentToken from ' +
+        'register_agent. budgetPaise is integer paise: 300000 means ₹3,000.00.',
       inputSchema: {
         agentToken: z
           .string()
           .optional()
           .describe('Your agentToken from register_agent. Calls without a valid one refuse.'),
-        variantId: z
+        want: z
           .string()
-          .optional()
-          .describe('Variant to buy, from get_product. Omit if the merchant sells only one.'),
-        quantity: z.number().int().min(1).max(10).default(1).describe('How many units to buy.'),
+          .describe('Plain-language description of what you intend to buy, e.g. "two tees".'),
+        budgetPaise: z
+          .number()
+          .describe(
+            'Your Budget for THIS purchase, as a positive integer number of paise. ' +
+              'Not rupees, no decimals: 300000 means ₹3,000.00.',
+          ),
       },
     },
-    withToolErrors(async ({ agentToken, variantId, quantity }) => {
+    withToolErrors(async ({ agentToken, want, budgetPaise }) => {
+      const agent = await requireRegisteredAgent(
+        deps.db,
+        deps.merchantId,
+        agentToken,
+        'declare_intent',
+      );
+      const result = await declareIntent(deps.db, agent, { want, budgetPaise });
+      return textResult({
+        intentHash: result.intentHash,
+        payload: result.payload,
+        signature: result.signature,
+        budget: result.budget,
+        nextStep:
+          'Call create_cart with this intentHash and the items you want ' +
+          '(variantId + quantity from get_product).',
+      });
+    }),
+  );
+
+  server.registerTool(
+    'create_cart',
+    {
+      title: 'Create cart',
+      description:
+        'Step 2 of buying: turn an Intent into a priced, immutable Cart mandate. One shot — ' +
+        'there is no cart editing; to change items, just call create_cart again (earlier ' +
+        'carts stay valid and unpaid, nothing is invalidated). Pins the current catalog ' +
+        'prices and is signed by both your custodial key and the merchant key. Returns the ' +
+        'cartHash to pass to submit_payment. Requires the agentToken from register_agent.',
+      inputSchema: {
+        agentToken: z
+          .string()
+          .optional()
+          .describe('Your agentToken from register_agent. Calls without a valid one refuse.'),
+        intentHash: z.string().describe('The intentHash returned by declare_intent.'),
+        items: z
+          .array(
+            z.object({
+              variantId: z.string().describe('A variantId from get_product.'),
+              quantity: z.number().int().min(1).describe('How many units. Positive integer.'),
+            }),
+          )
+          .min(1)
+          .describe('Every line of the purchase; one entry per Variant.'),
+      },
+    },
+    withToolErrors(async ({ agentToken, intentHash, items }) => {
+      const agent = await requireRegisteredAgent(
+        deps.db,
+        deps.merchantId,
+        agentToken,
+        'create_cart',
+      );
+      const result = await createCart(deps.db, agent, { intentHash, items });
+      return textResult({
+        cartHash: result.cartHash,
+        payload: result.payload,
+        agentSignature: result.agentSignature,
+        merchantSignature: result.merchantSignature,
+        total: result.total,
+        items: result.items,
+        nextStep:
+          'Call submit_payment with this cartHash and a fresh UUID you mint as ' +
+          'idempotencyKey. If prices change before then, submit_payment refuses ' +
+          'PRICE_CHANGED and you simply create_cart again.',
+      });
+    }),
+  );
+
+  server.registerTool(
+    'submit_payment',
+    {
+      title: 'Submit payment',
+      description:
+        'Step 3 of buying: authorize payment of one Cart mandate. The server signs your ' +
+        'Payment mandate, verifies the whole Intent → Cart → Payment chain (signatures, ' +
+        'hashes, pinned prices, stock) and only then creates the Order and returns a ' +
+        'Razorpay-hosted payment link. No money moves until the human approves that link. ' +
+        'Mint a fresh UUID as idempotencyKey for every new payment attempt and reuse it ' +
+        'only when retrying this exact cart. Requires the agentToken from register_agent.',
+      inputSchema: {
+        agentToken: z
+          .string()
+          .optional()
+          .describe('Your agentToken from register_agent. Calls without a valid one refuse.'),
+        cartHash: z.string().describe('The cartHash returned by create_cart.'),
+        idempotencyKey: z
+          .string()
+          .min(1)
+          .describe('A fresh UUID you mint for this payment attempt.'),
+      },
+    },
+    withToolErrors(async ({ agentToken, cartHash, idempotencyKey }) => {
       // The trust gate runs first — an unregistered agent is refused before
       // any Order exists and before the gateway is ever touched.
-      await requireRegisteredAgent(deps.db, deps.merchantId, agentToken, 'checkout');
-      const result = await checkout(deps, {
-        merchantId: deps.merchantId,
-        variantId,
-        quantity: quantity ?? 1,
-      });
+      const agent = await requireRegisteredAgent(
+        deps.db,
+        deps.merchantId,
+        agentToken,
+        'submit_payment',
+      );
+      const result = await submitPayment(deps, agent, { cartHash, idempotencyKey });
       return textResult({
         orderId: result.orderId,
         status: result.status,
         total: result.total,
-        quantity: result.quantity,
-        product: result.variant.productTitle,
-        variantId: result.variant.variantId,
+        items: result.items,
         paymentLinkUrl: result.paymentLinkUrl,
         gatewayPaymentLinkId: result.gatewayPaymentLinkId,
+        paymentMandate: result.paymentMandate,
         nextStep:
           'Give paymentLinkUrl to your human and ask them to approve it. ' +
           'In Razorpay test mode the UPI id success@razorpay completes the payment. ' +
-          `Then call get_order_status with orderId ${result.orderId}.`,
+          `Then call get_order_status with orderId ${result.orderId}; once paid it ` +
+          'includes the merchant-signed Receipt.',
         auditUrl: `${deps.publicBaseUrl}/audit/${result.orderId}`,
       });
     }),
@@ -191,15 +304,16 @@ export function createMcpServer(deps: StorefrontDeps): McpServer {
     {
       title: 'Get order status',
       description:
-        'Look up one order by the orderId returned from checkout. `paid` means the human ' +
-        'approved the payment link and the gateway webhook confirmed it. Requires the ' +
-        'agentToken from register_agent.',
+        'Look up one order by the orderId returned from submit_payment. `paid` means the ' +
+        'human approved the payment link and the gateway webhook confirmed it — the ' +
+        'response then includes the merchant-signed Receipt (payload, signature, and the ' +
+        'merchant public key to verify it with). Requires the agentToken from register_agent.',
       inputSchema: {
         agentToken: z
           .string()
           .optional()
           .describe('Your agentToken from register_agent. Calls without a valid one refuse.'),
-        orderId: z.string().describe('The orderId returned by checkout (starts with ord_).'),
+        orderId: z.string().describe('The orderId returned by submit_payment (starts with ord_).'),
       },
     },
     withToolErrors(async ({ agentToken, orderId }) => {
@@ -210,15 +324,22 @@ export function createMcpServer(deps: StorefrontDeps): McpServer {
           new ValidationError('ORDER_NOT_FOUND', `No order with id ${orderId}`),
         );
       }
-      // Legacy single-variant Orders only; multi-item Orders (T4) have a null
-      // variantId and get their product detail from order_items instead.
+      const items = await listOrderItems(deps.db, row.id);
+      // Legacy single-variant Orders only; mandate-backed Orders (T4) have a
+      // null variantId and carry their product detail in `items` instead.
       const variant =
         row.variantId === null
           ? null
           : await findPublishedVariant(deps.db, deps.merchantId, row.variantId);
+      // The Receipt is minted by the paid webhook, so it appears exactly when
+      // the status flips to paid — and only for mandate-backed Orders.
+      const receipt =
+        row.status === 'paid' ? await findOrderReceipt(deps.db, deps.merchantId, row.id) : null;
       return textResult({
         ...toOrderStatusView(row),
+        items,
         product: variant?.productTitle ?? null,
+        receipt,
         auditUrl: `${deps.publicBaseUrl}/audit/${row.id}`,
       });
     }),

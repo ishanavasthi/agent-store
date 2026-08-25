@@ -1,8 +1,11 @@
+import { randomUUID } from 'node:crypto';
 import { asc, eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { StorefrontDeps } from '../deps.js';
-import { auditEvents, variants } from '../db/schema.js';
-import { checkout } from '../domain/checkout.js';
+import { agents, auditEvents, orderItems, receipts, variants, type AgentRow } from '../db/schema.js';
+import { registerAgent } from '../domain/agents.js';
+import { submitPayment, type SubmitPaymentResult } from '../domain/checkout.js';
+import { createCart, declareIntent } from '../domain/mandateFlow.js';
 import { applyGatewayWebhook, findOrderById, type WebhookOutcome } from '../domain/orders.js';
 import { createTestDatabase, type TestDatabaseHandle } from '../testSupport/pgliteDatabase.js';
 import { MERCHANT_ID, seedCatalog } from '../testSupport/seedCatalog.js';
@@ -11,7 +14,9 @@ import { StubGateway, type SyntheticWebhook } from './stubGateway.js';
 /**
  * T2's acceptance proof: a purchase runs fully in-process — StubGateway for
  * the rails, embedded PGlite for the database — with no network calls, and
- * Declines and Oversells are scriptable on demand (issue #3).
+ * Declines and Oversells are scriptable on demand (issue #3). Since T4 the
+ * purchase is the mandate chain (declare_intent → create_cart →
+ * submit_payment); the gateway seam this file exercises is unchanged.
  *
  * Webhook delivery mirrors `http/app.ts`'s route exactly: verify signature
  * over the raw bytes, parse, then `applyGatewayWebhook`.
@@ -22,6 +27,23 @@ async function deliver(deps: StorefrontDeps, hook: SyntheticWebhook): Promise<We
   expect(deps.gateway.verifyWebhookSignature(hook.rawBody, hook.signature)).toBe(true);
   const event = deps.gateway.parseWebhookEvent(hook.rawBody);
   return applyGatewayWebhook(deps.db, deps.merchantId, event, deps.gateway.name);
+}
+
+/** Register an Agent and fetch its row — submitPayment signs with its custodial key. */
+async function registeredAgent(deps: StorefrontDeps): Promise<AgentRow> {
+  const registration = await registerAgent(deps.db, MERCHANT_ID, { capPaise: 500000 });
+  const [row] = await deps.db.select().from(agents).where(eq(agents.id, registration.agentId));
+  return row!;
+}
+
+/** Run the whole mandate chain up to the payment link, for one tee. */
+async function placeOrder(deps: StorefrontDeps, agent: AgentRow): Promise<SubmitPaymentResult> {
+  const intent = await declareIntent(deps.db, agent, { want: 'one tee', budgetPaise: 200000 });
+  const cart = await createCart(deps.db, agent, {
+    intentHash: intent.intentHash,
+    items: [{ variantId: 'var_test_tee_default', quantity: 1 }],
+  });
+  return submitPayment(deps, agent, { cartHash: cart.cartHash, idempotencyKey: randomUUID() });
 }
 
 describe('in-process purchase against the stub', () => {
@@ -44,10 +66,11 @@ describe('in-process purchase against the stub', () => {
     await handle.close();
   });
 
-  it('happy path: checkout → synthetic webhooks → Order paid, audit chain complete', async () => {
+  it('happy path: mandate chain → synthetic webhooks → Order paid, audit chain complete', async () => {
     await seedCatalog(deps.db, 3);
+    const agent = await registeredAgent(deps);
 
-    const result = await checkout(deps, { merchantId: MERCHANT_ID, quantity: 1 });
+    const result = await placeOrder(deps, agent);
     expect(result.status).toBe('awaiting_payment');
     expect(result.gatewayPaymentLinkId).toBe('plink_stub_1');
     expect(result.paymentLinkUrl).toBe('https://stub.invalid/pay/plink_stub_1');
@@ -72,28 +95,33 @@ describe('in-process purchase against the stub', () => {
       .where(eq(auditEvents.orderId, result.orderId))
       .orderBy(asc(auditEvents.seq));
     expect(chain.map((e) => e.type)).toEqual([
+      'payment.verified',
       'order.created',
       'gateway.payment_link_attempted',
       'gateway.payment_link_issued',
       'gateway.webhook_received',
       'gateway.order_linked',
       'order.paid',
+      'receipt.issued',
       'gateway.webhook_received',
     ]);
     // Namespaced, so the rule-auditor never meets two meanings of one spelling.
-    expect((chain[3]!.payload as { gatewayEvent: string }).gatewayEvent).toBe(
+    expect((chain[4]!.payload as { gatewayEvent: string }).gatewayEvent).toBe(
       'stub:payment_link.paid',
     );
-    expect((chain[5]!.payload as { gateway: string }).gateway).toBe('stub');
+    expect((chain[6]!.payload as { gateway: string }).gateway).toBe('stub');
 
-    // Redelivery of an already-applied success is still free.
+    // Redelivery of an already-applied success is still free — and mints no
+    // second Receipt (`already_paid` returns before the minting step).
     const redelivered = await deliver(deps, hooks[0]!);
     expect(redelivered).toEqual({ result: 'already_paid', orderId: result.orderId });
+    expect(await deps.db.select().from(receipts)).toHaveLength(1);
   });
 
   it('Decline on demand: payment.failed is recorded and the Order never becomes paid', async () => {
     await seedCatalog(deps.db, 3);
-    const result = await checkout(deps, { merchantId: MERCHANT_ID, quantity: 1 });
+    const agent = await registeredAgent(deps);
+    const result = await placeOrder(deps, agent);
 
     const declined = await deliver(deps, gateway.failPayment(result.gatewayPaymentLinkId)[0]!);
     expect(declined).toEqual({ result: 'recorded', orderId: result.orderId });
@@ -109,11 +137,12 @@ describe('in-process purchase against the stub', () => {
 
   it('Oversell on demand: two captures land against stock that covers one', async () => {
     await seedCatalog(deps.db, 1);
+    const agent = await registeredAgent(deps);
 
     // No reservations, deliberately (spec: the race window is what makes the
-    // Oversell failure real). Both checkouts pass the pre-payment stock check.
-    const a = await checkout(deps, { merchantId: MERCHANT_ID, quantity: 1 });
-    const b = await checkout(deps, { merchantId: MERCHANT_ID, quantity: 1 });
+    // Oversell failure real). Both chains pass the pre-payment stock check.
+    const a = await placeOrder(deps, agent);
+    const b = await placeOrder(deps, agent);
 
     for (const r of [a, b]) {
       const outcome = await deliver(deps, gateway.completePayment(r.gatewayPaymentLinkId)[0]!);
@@ -132,8 +161,9 @@ describe('in-process purchase against the stub', () => {
     const orderB = await findOrderById(deps.db, MERCHANT_ID, b.orderId);
     expect(orderA?.status).toBe('paid');
     expect(orderB?.status).toBe('paid');
-    expect((orderA?.quantity ?? 0) + (orderB?.quantity ?? 0)).toBeGreaterThan(
-      variantRow?.stock ?? 0,
-    );
+    // Line items live in order_items since T4 — the legacy quantity column is null.
+    const lines = await deps.db.select().from(orderItems);
+    const sold = lines.reduce((sum, line) => sum + line.quantity, 0);
+    expect(sold).toBeGreaterThan(variantRow?.stock ?? 0);
   });
 });
