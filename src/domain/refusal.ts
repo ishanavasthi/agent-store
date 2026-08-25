@@ -16,17 +16,20 @@
 /**
  * T1 enforces only the pre-payment stock case, which CONTEXT.md names as *the*
  * refusal case ("out-of-stock — that's the pre-payment refusal case"). The
- * trust layer (T3/T4) adds the rest of this union; they are listed now so the
- * vocabulary is fixed in one place rather than accreting per ticket.
+ * trust layer (T3/T4/T5) adds the rest of this union; they are listed in one
+ * place so the vocabulary is fixed rather than accreting per ticket.
  */
 export type RefusalCode =
   | 'OUT_OF_STOCK'
   /** T3: the token presented matches no Agent registration (ADR-0001). */
   | 'UNREGISTERED_AGENT'
-  // Reserved for T5's enforcement suites — not yet reachable:
+  /** T5: cart total exceeds the Intent's Budget. Recoverable — a smaller cart under the same Intent can pass. */
   | 'OVER_BUDGET'
+  /** T5: cumulative captured+pending spend would exceed the registration's immutable Cap. Not recoverable. */
   | 'OVER_CAP'
+  /** T5: idempotency key reused with a *different* cart hash. Recoverable — mint a fresh key. (Same hash replays instead.) */
   | 'IDEMPOTENCY_REUSE'
+  /** T5: this Intent was already consumed by its first paid Cart (1:1:1). Recoverable — declare a new Intent. */
   | 'INTENT_CONSUMED'
   /** T4: the pinned price hash no longer matches the live catalog. Recoverable — re-run create_cart. */
   | 'PRICE_CHANGED'

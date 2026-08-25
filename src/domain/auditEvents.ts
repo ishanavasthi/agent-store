@@ -49,6 +49,13 @@ export const AUDIT_EVENT_TYPES = [
   'payment.refused',
   /** Merchant-signed Receipt minted for the paid Order, in the same tx as `order.paid`. */
   'receipt.issued',
+  // T5 — enforcement (appended, same ALTER TYPE … ADD VALUE growth rule as T4):
+  /**
+   * A submit_payment retry replayed its original result — same idempotency key,
+   * same cart hash, so no new Order and no second gateway charge (DECISIONS
+   * 2026-08-23 idempotency). Attributed to the original Order.
+   */
+  'payment.replayed',
 ] as const;
 
 export type AuditEventType = (typeof AUDIT_EVENT_TYPES)[number];
@@ -96,6 +103,8 @@ export const AUDIT_EVENT_SUMMARIES: Record<AuditEventType, string> = {
   'payment.verified': 'Payment mandate verified — mandate chain checked, cleared to contact the gateway',
   'payment.refused': 'Payment mandate refused before any money moved — reason code in payload',
   'receipt.issued': 'Merchant-signed Receipt issued for the paid Order',
+  'payment.replayed':
+    'Same idempotency key and cart hash — the original result was replayed, no second charge',
 };
 
 /**
