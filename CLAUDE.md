@@ -17,3 +17,7 @@ Single-context: `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/do
 ### Engineering log
 
 Record what broke in `docs/engineering-log.md` — after fixing a bug, getting a failed build or deploy green, hitting a dependency that contradicts its own docs or types, or finding a trap that will mislead again. See `docs/agents/engineering-log.md`.
+
+### Release logistics
+
+Update git-ignored `private/submission-notes.md` whenever the deploy topology, a milestone date, or the demo flow changes — it carries the release checklist and video outline, and nothing in `git status` will remind you it went stale.
