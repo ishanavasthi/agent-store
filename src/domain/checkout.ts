@@ -87,9 +87,11 @@ export async function checkout(
   }
 
   // --- 3. Trust gate -------------------------------------------------------
-  // T3/T4: verify the mandate chain, enforce Budget and Cap, check idempotency
-  // and the pinned price hash. A Refusal returns from here, before the gateway
-  // is ever touched.
+  // T3's identity gate runs even earlier: `requireRegisteredAgent` refuses
+  // unregistered callers at the tool boundary (src/mcp/server.ts), before this
+  // function is entered. T4 fills this phase: verify the mandate chain, enforce
+  // Budget and Cap, check idempotency and the pinned price hash. A Refusal
+  // returns from here, before the gateway is ever touched.
 
   // --- 4. Create the domain Order -----------------------------------------
   const orderId = newId('order');

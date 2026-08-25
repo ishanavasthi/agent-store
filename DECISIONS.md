@@ -202,3 +202,27 @@ Why: the repository should stand as a real project on its own terms. All submiss
 Rejected: submission framing in PLAN.md/README (original rev 1 plan).
 Revisit when: never.
 Tier: Verified (user decision, 2026-08-22)
+
+## 2026-08-26: Gateway stub is composed at test/eval composition points; no GATEWAY env switch
+Why: T2's acceptance criterion "real-rail code paths use the real implementation unchanged" is a constraint, not a feature — the deployed server stays Razorpay-only (`src/index.ts` constructs `RazorpayGateway` unconditionally), and every consumer of the stub (the integration tests today, the T15 eval runner next) constructs `StubGateway` at its own composition root. Which gateway ran is a property of the code path, never of deployment state — so the deployed demo can never silently run fake rails.
+Rejected: `GATEWAY=stub|razorpay` env switch (speculative config plumbing; makes Razorpay creds conditionally optional and adds a misconfiguration mode).
+Revisit when: T15 turns out to need the deployed server itself running against the stub (nothing currently suggests it).
+Tier: Likely (Claude ruling during T2, 2026-08-26 — flagged for veto; plan: docs/superpowers/plans/2026-08-26-t2-gateway-stub.md)
+
+## 2026-08-26: In-process tests run on embedded PGlite with the real committed migrations
+Why: T2's "happy-path purchase fully in-process with no network calls" needs a real Postgres without a socket. PGlite (WASM, devDependency only) runs the committed drizzle migrations — including 0001's append-only audit triggers — so integration tests exercise the same SQL, transactions, and trigger behavior as Neon. It stays out of the shipped build by construction: `src/testSupport/` is excluded from `tsconfig.build.json`, the PGlite instance is cast to the app's `Database` type exactly once (documented, in `src/testSupport/pgliteDatabase.ts`), and `dist/` is verified free of pglite.
+Rejected: a Neon test database (network dependency, not CI-hermetic, fails the criterion); widening the production `Database` type to cover both drivers (prod type churn for a test concern); mocking drizzle (proves nothing about the audit-trigger claims).
+Revisit when: a Neon-vs-PGlite behavior divergence surfaces (none known).
+Tier: Likely (Claude ruling during T2, 2026-08-26 — flagged for veto; plan: docs/superpowers/plans/2026-08-26-t2-gateway-stub.md)
+
+## 2026-08-26: Ed25519 via node:crypto — no @noble/ed25519
+Why: PLAN §5 names `@noble/ed25519`, but Node has shipped Ed25519 natively (`generateKeyPairSync`/`sign`/`verify`) since v12 — the dependency would buy nothing and reopen the npm-10 lockfile trap (engineering-log 2026-08-24). The wire encoding is fixed once, in `src/domain/keys.ts`: base64 DER (SPKI public, PKCS8 private), base64 signatures — the T4 mandate chain and the eval buyer's client-side signer (DECISIONS 2026-08-23 "Split key custody") must use exactly this encoding.
+Rejected: `@noble/ed25519` (PLAN.md §5; a new dependency proving nothing extra).
+Revisit when: signing must run somewhere without node:crypto (a browser buyer) — nothing planned runs there.
+Tier: Likely (Claude ruling during T3, 2026-08-26 — flagged for veto)
+
+## 2026-08-26: Agent token stored plaintext; get_product stays open, commerce tools gated
+Why: two T3 design calls. (1) The Agent row already holds the custodial private key — custody *is* the design (ADR-0001) — so hashing the bearer token at rest would protect one secret sitting beside an unprotected one; it is stored plaintext and looked up by unique index. Refusal audit payloads record only that a token was presented, never the token. (2) `get_product` requires no token: a shop window is public, and registration gates transacting — `checkout` and `get_order_status` refuse `UNREGISTERED_AGENT` (with an `agent.refused` audit entry) without a valid one, which is where PLAN §10's unregistered-agent eval scenario lands.
+Rejected: SHA-256 token-at-rest (theater next to the stored private key); gating `get_product` (blinds unregistered buyers for zero trust win — the refusal must protect money, not the catalog).
+Revisit when: keys leave custody (post-v1 UAP direction) — then the token is the only secret and hashing earns its keep.
+Tier: Likely (Claude ruling during T3, 2026-08-26 — flagged for veto)

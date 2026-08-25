@@ -9,6 +9,7 @@ const PREFIXES = {
   order: 'ord',
   product: 'prd',
   variant: 'var',
+  agent: 'agt',
 } as const;
 
 export type IdKind = keyof typeof PREFIXES;

@@ -90,7 +90,8 @@ one spelling. This holds in the schema, the code, the audit payloads, and the JS
 
 **Refusals and validation errors are different types.** A **Refusal** is the trust layer
 saying no on policy before money moves, and always carries
-`{code, reason, recoverable, retryAfter?}`; `OUT_OF_STOCK` is the one T1 can raise.
+`{code, reason, recoverable, retryAfter?}`; today that is `OUT_OF_STOCK` (T1) and
+`UNREGISTERED_AGENT` (T3 — a commerce call without a valid agent token).
 A malformed argument is a plain **validation error** with a deliberately different shape
 (`{code, message}` — no `recoverable`), so neither a buyer agent nor the rule-auditor can
 confuse the two categories. A gateway **Decline** is a third thing again and lives on the
@@ -98,12 +99,16 @@ webhook path. See `src/domain/refusal.ts` and CONTEXT.md → Failure vocabulary.
 
 ### Not built yet
 
-`checkout` today goes straight from "resolve the Variant" to "create the Order". The trust
-layer lands in that gap — `src/domain/checkout.ts` marks it as an explicit, commented phase
-that runs *before* any gateway call, so a Refusal will always mean zero money moved.
+Since T3, `checkout` and `get_order_status` refuse `UNREGISTERED_AGENT` unless called with
+a valid agent token from `register_agent` (which mints a custodial Ed25519 keypair and
+records the buyer-declared Cap). The rest of the trust layer lands in the gap between
+"resolve the Variant" and "create the Order" — `src/domain/checkout.ts` marks it as an
+explicit, commented phase that runs *before* any gateway call, so a Refusal will always
+mean zero money moved.
 
-- **T3/T4** — `register_agent`, the Intent → Cart → Payment mandate chain, Budgets, Caps,
-  idempotency, price-hash pinning, structured Refusals, signed Receipts.
+- **T4** — the Intent → Cart → Payment mandate chain, Budget enforcement, cumulative Cap
+  enforcement at payment time (the Cap itself is declared and stored at registration since
+  T3), idempotency, price-hash pinning, signed Receipts.
 - **T7** — the React audit viewer over `GET /audit/:orderId`.
 - Ingestion (M4), the ACP-flavored REST twin, and `/.well-known` discovery.
 

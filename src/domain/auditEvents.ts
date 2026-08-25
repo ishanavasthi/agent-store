@@ -28,6 +28,15 @@ export const AUDIT_EVENT_TYPES = [
   'order.paid',
   /** Something arrived that we refused to act on. Never silently swallowed. */
   'order.anomaly_detected',
+  // T3 — the trust layer's own transitions:
+  /** An Agent was minted: custodial keypair + token + Cap (ADR-0001). */
+  'agent.registered',
+  /**
+   * The trust layer said no *before money moved*. The structured Refusal —
+   * `{code, reason, recoverable}` — is the payload, so "every refusal has a
+   * reason code" is checkable from this table alone.
+   */
+  'agent.refused',
 ] as const;
 
 export type AuditEventType = (typeof AUDIT_EVENT_TYPES)[number];
@@ -56,6 +65,8 @@ export const AUDIT_EVENT_SUMMARIES: Record<AuditEventType, string> = {
   'gateway.order_linked': 'Razorpay’s own gateway order id recorded against this Order',
   'order.paid': 'Domain Order marked paid',
   'order.anomaly_detected': 'Anomaly detected — the Order was deliberately not advanced',
+  'agent.registered': 'Agent registered — custodial keypair minted, Cap declared',
+  'agent.refused': 'Refused by the trust layer before any money moved — reason code in payload',
 };
 
 /**

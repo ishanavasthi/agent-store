@@ -50,8 +50,47 @@ export const auditEventType = pgEnum('audit_event_type', AUDIT_EVENT_TYPES);
 export const merchants = pgTable('merchants', {
   id: text('id').primaryKey(),
   name: text('name').notNull(),
+  /**
+   * The Merchant's own Ed25519 signing keypair (CONTEXT.md → Merchant: "a
+   * first-class entity owning a catalog and a signing key"), stored as base64
+   * DER — SPKI public, PKCS8 private (see `src/domain/keys.ts`). Nullable
+   * because rows predate the key; `ensureMerchantSigningKey` mints it
+   * idempotently at seed time. T4's Receipts are signed with it.
+   */
+  signingPublicKey: text('signing_public_key'),
+  signingPrivateKey: text('signing_private_key'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
+
+/**
+ * An Agent IS its registration (ADR-0001): one custodial Ed25519 keypair plus
+ * one bearer token plus one buyer-declared Cap, minted together by
+ * `register_agent` and immutable for the registration's lifetime — hence no
+ * `updatedAt`. Re-registering inserts a new row; nothing ever links two rows to
+ * "the same buyer". The Cap is per Agent×Merchant (CONTEXT.md → Cap), which is
+ * why the ceiling lives here rather than in config.
+ */
+export const agents = pgTable(
+  'agents',
+  {
+    id: text('id').primaryKey(),
+    merchantId: text('merchant_id')
+      .notNull()
+      .references(() => merchants.id),
+    /** Bearer token the Agent presents on every tool call (`agt_tok_…`). */
+    token: text('token').notNull(),
+    /** Custodial Ed25519 keypair, base64 DER — the server signs on the Agent's behalf (T4). */
+    publicKey: text('public_key').notNull(),
+    privateKey: text('private_key').notNull(),
+    /** The buyer-declared spend ceiling for this registration. Integer paise. */
+    capPaise: integer('cap_paise').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex('agents_token_idx').on(table.token),
+    index('agents_merchant_idx').on(table.merchantId),
+  ],
+);
 
 export const products = pgTable(
   'products',
@@ -153,6 +192,7 @@ export type ProductStatus = (typeof productStatus.enumValues)[number];
 export type OrderStatus = (typeof orderStatus.enumValues)[number];
 
 export type MerchantRow = typeof merchants.$inferSelect;
+export type AgentRow = typeof agents.$inferSelect;
 export type ProductRow = typeof products.$inferSelect;
 export type VariantRow = typeof variants.$inferSelect;
 export type OrderRow = typeof orders.$inferSelect;

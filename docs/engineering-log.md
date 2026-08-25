@@ -200,6 +200,9 @@ Not bugs of ours — properties of the platforms that will mislead someone event
 - Render's free web service spins down after roughly 15 minutes idle; the keep-warm ping mitigates but does not eliminate the cold start.
 - Railway has no free tier: a $5 one-time trial credit valid 30 days, then $5/month or services pause.
 
+**Toolchain**
+- The dev machine's default npm is 11.x while the repo pins npm 10 (`engines.npm` + `packageManager`), and the pin only **warns** (EBADENGINE) — it does not block. A bare `npm install` here silently regenerates `package-lock.json` in the npm-11 shape that npm 10 rejects on every deploy target (the 2026-08-24 incident above). It bit again on 2026-08-26 during T2's merge verification: the rewrite dropped ~470 lines of nested `node_modules/vitest/node_modules/@esbuild/*` entries and was caught by `git status` and reverted before commit. Safe invocation on this machine: `npx --yes npm@10.9.3 install …`. A `preinstall` engine guard (e.g. `npx check-node-version` or a one-line version test) would make the pin enforceable; not yet added.
+
 ---
 
 ## Standing tradeoffs
