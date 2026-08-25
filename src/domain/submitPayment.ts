@@ -1,7 +1,15 @@
-import { and, eq } from 'drizzle-orm';
+import { and, eq, isNull, notInArray, sql } from 'drizzle-orm';
+import type { Database } from '../db/client.js';
 import type { StorefrontDeps } from '../deps.js';
-import type { AgentRow, OrderStatus } from '../db/schema.js';
-import { intentMandates, orderItems, orders, paymentMandates } from '../db/schema.js';
+import type { AgentRow, OrderStatus, PaymentMandateRow } from '../db/schema.js';
+import {
+  intentMandates,
+  orderItems,
+  orders,
+  paymentMandates,
+  products,
+  variants,
+} from '../db/schema.js';
 import { appendAuditEvent } from './auditLog.js';
 import { findPublishedVariant, type VariantView } from './catalog.js';
 import { newId, toGatewayReference } from './ids.js';
@@ -10,6 +18,7 @@ import {
   hashMandate,
   parseCartMandatePayload,
   parseIntentMandatePayload,
+  parsePaymentMandatePayload,
   signMandate,
   verifyMandateChain,
   verifyMandateSignature,
@@ -17,7 +26,7 @@ import {
   type PaymentMandatePayload,
 } from './mandates.js';
 import { requireCartMandate, requireMerchantSigningKey, type CartLineView } from './mandateFlow.js';
-import { moneyView, type MoneyView } from './money.js';
+import { moneyView, paise, type MoneyView } from './money.js';
 import { Refusal, type RefusalPayload } from './refusal.js';
 
 /**
@@ -26,8 +35,11 @@ import { Refusal, type RefusalPayload } from './refusal.js';
  * gone). Shape preserved from the walking skeleton: four ordered phases —
  *   1. resolve the Cart mandate being paid,
  *   2. compose and custodially sign the Payment mandate,
- *   3. **the trust gate** — verify the whole chain; a Refusal returns from
- *      here, before any Order exists and before the gateway is ever touched,
+ *   3. **the trust gate** — verify the whole chain and enforce policy (issue
+ *      #6: idempotency, Budget, Cap, intent consumption); a Refusal returns
+ *      from here with nothing persisted and the gateway never touched, and a
+ *      same-key retry returns the original result from here instead of
+ *      charging twice,
  *   4. create the domain Order, then the one gateway artifact.
  *
  * ADR-0003: every state change below commits in the same transaction as its
@@ -83,10 +95,14 @@ export async function submitPayment(
   const paymentSignature = signMandate(agent.privateKey, paymentPayload);
 
   // --- 3. Trust gate --------------------------------------------------------
-  // Everything below runs strictly before the Order insert and before the
-  // first gateway audit event, so a Refusal here means zero money moved and
-  // the gateway was never contacted. Refusals are audited first (the
-  // `agent.refused` precedent: own transaction, orderId null), then thrown.
+  // A Refusal from anywhere in this gate means zero rows persisted and the
+  // gateway never contacted: the pre-transaction checks run strictly before
+  // the Order insert, and the in-transaction checks (OVER_CAP, intent
+  // consumption) roll the whole transaction back before this helper runs.
+  // In particular a refused submission persists no payment_mandates row, so a
+  // refusal never consumes an idempotency key. Refusals are audited first
+  // (the `agent.refused` precedent: own transaction, orderId null), then
+  // thrown.
   const refuse = async (payload: RefusalPayload): Promise<never> => {
     const refusal = new Refusal(payload);
     await db.transaction(async (tx) => {
@@ -106,6 +122,43 @@ export async function submitPayment(
     });
     throw refusal;
   };
+
+  // The rule for a key that already carries a Payment mandate (DECISIONS
+  // 2026-08-23 idempotency): same cart hash replays the original result —
+  // no new Order, no gateway call, no second charge — and a different cart
+  // hash refuses rather than silently answering for a cart the buyer never
+  // submitted. Reached from the lookup below and from the unique-index race
+  // backstop after the transaction.
+  const replayOrRefuse = async (existing: PaymentMandateRow): Promise<SubmitPaymentResult> => {
+    if (existing.cartHash !== cartRow.hash) {
+      return refuse({
+        code: 'IDEMPOTENCY_REUSE',
+        reason:
+          `Idempotency key ${request.idempotencyKey} already belongs to a Payment mandate for a ` +
+          `different cart (${existing.cartHash}). Mint a fresh key for this cart.`,
+        recoverable: true,
+      });
+    }
+    return replayOriginalResult(db, agent, existing);
+  };
+
+  // Idempotency is checked before the rest of the gate: a retry of a passed
+  // payment must replay even if the catalog has since moved (PRICE_CHANGED and
+  // every later check would answer for the *new* submission, not the one the
+  // buyer already made). Keys are buyer-minted and scoped Agent×Merchant.
+  const [existingMandate] = await db
+    .select()
+    .from(paymentMandates)
+    .where(
+      and(
+        eq(paymentMandates.agentId, agent.id),
+        eq(paymentMandates.idempotencyKey, request.idempotencyKey),
+      ),
+    )
+    .limit(1);
+  if (existingMandate !== undefined) {
+    return replayOrRefuse(existingMandate);
+  }
 
   // The chain's root must exist and belong to the same Agent. The cart row was
   // only ever written pointing at a stored Intent, so a miss here is a broken
@@ -141,6 +194,19 @@ export async function submitPayment(
         ? `Mandate chain failed verification: ${chain.failures.join(', ')}`
         : 'A stored mandate signature does not verify against its public key',
       recoverable: false,
+    });
+  }
+
+  // The paid chain is 1:1:1 (DECISIONS 2026-08-23): an Intent is consumed by
+  // its first paid Cart mandate. Friendly pre-check only — the race-proof
+  // guard is the SQL UPDATE inside the order transaction below.
+  if (intentRow.consumedByOrderId !== null) {
+    return refuse({
+      code: 'INTENT_CONSUMED',
+      reason:
+        `Intent ${intentRow.hash} was already consumed by order ${intentRow.consumedByOrderId}. ` +
+        'Declare a new Intent for this purchase — a second purchase signs a new Intent.',
+      recoverable: true,
     });
   }
 
@@ -184,19 +250,20 @@ export async function submitPayment(
     }
   }
 
-  // T5's enforcement slot (issue #6) — the checks land here, after the chain
-  // verifies and before any Order exists. Everything they need is already
-  // persisted: OVER_BUDGET reads `intent_mandates.budget_paise`, OVER_CAP sums
-  // paid Orders per Agent×Merchant via `orders.agent_id`, INTENT_CONSUMED
-  // guards `intent_mandates.consumed_by_order_id` in SQL, IDEMPOTENCY_REUSE
-  // rides the unique (agent_id, idempotency_key) index on payment_mandates.
-  // Two facts T5 must not trip over: a *refused* submission persists no
-  // payment_mandates row (only passed verifications reach the insert below),
-  // so refusals never consume an idempotency key; and today a same-key retry
-  // of a passed payment surfaces as a raw unique-index DB error — T5 owns
-  // turning that into structured behavior (replay the original result on the
-  // same cartHash, refuse IDEMPOTENCY_REUSE on a different one), not into a
-  // reliance on the index alone.
+  // Budget (per Intent) is enforced against the *signed* Intent payload, not
+  // the denormalized `budget_paise` column — the artifact is what the Agent
+  // authorized. Recoverable: a smaller cart under this same Intent can pass —
+  // contrast OVER_CAP below.
+  if (cart.totalPaise > intent.budgetPaise) {
+    return refuse({
+      code: 'OVER_BUDGET',
+      reason:
+        `Cart total ${moneyView(cart.totalPaise).amountDisplay} exceeds this Intent's Budget of ` +
+        `${moneyView(intent.budgetPaise).amountDisplay}. Create a smaller cart under this Intent, ` +
+        'or declare a new Intent with a larger Budget.',
+      recoverable: true,
+    });
+  }
 
   // --- 4. Create the domain Order -------------------------------------------
   const orderId = newId('order');
@@ -207,60 +274,140 @@ export async function submitPayment(
   // Order, its line items, the Payment mandate row, and both audit events
   // commit together (ADR-0003). The legacy single-variant columns on `orders`
   // stay NULL — line items are `order_items` rows now (DECISIONS 2026-08-26).
-  await db.transaction(async (tx) => {
-    await tx.insert(orders).values({
-      id: orderId,
-      merchantId,
-      agentId: agent.id,
-      amountPaise: totalPaise,
-      currency: total.currency,
-      status: 'created',
-    });
-    await tx.insert(orderItems).values(
-      cart.items.map((item) => ({
-        id: newId('orderItem'),
-        orderId,
-        variantId: item.variantId,
-        quantity: item.quantity,
-        unitPricePaise: item.unitPricePaise,
-      })),
-    );
-    await tx.insert(paymentMandates).values({
-      id: newId('paymentMandate'),
-      agentId: agent.id,
-      merchantId,
-      cartHash: cartRow.hash,
-      idempotencyKey: request.idempotencyKey,
-      payload: paymentPayload,
-      hash: paymentHash,
-      agentSignature: paymentSignature,
-      orderId,
-    });
-    await appendAuditEvent(tx, {
-      type: 'payment.verified',
-      merchantId,
-      orderId,
-      payload: {
+  //
+  // The last two policy checks live INSIDE this transaction (issue #6:
+  // "checked in a transaction"): OVER_CAP over a sum that cannot go stale
+  // against the Order it gates, and intent consumption under its SQL guard.
+  // Either one throws a Refusal, rolling back every insert — so a refused
+  // submission persists nothing, and in particular no payment_mandates row.
+  try {
+    await db.transaction(async (tx) => {
+      // Cap (per Agent×Merchant, and an Agent belongs to exactly one
+      // merchant) counts captured AND pending spend: created /
+      // awaiting_payment / paid all hold money against the ceiling; only
+      // cancelled/refunded free headroom. Not recoverable: the Cap is
+      // immutable for the registration's lifetime (ADR-0001), and
+      // cancellation/refund is not something the Agent can perform.
+      const [cumulative] = await tx
+        .select({ spent: sql<string>`coalesce(sum(${orders.amountPaise}), 0)` })
+        .from(orders)
+        .where(
+          and(eq(orders.agentId, agent.id), notInArray(orders.status, ['cancelled', 'refunded'])),
+        );
+      const spentPaise = paise(Number(cumulative?.spent ?? 0));
+      if (spentPaise + totalPaise > agent.capPaise) {
+        throw new Refusal({
+          code: 'OVER_CAP',
+          reason:
+            `This cart's ${moneyView(totalPaise).amountDisplay} on top of ` +
+            `${moneyView(spentPaise).amountDisplay} already spent or pending would exceed this ` +
+            `registration's Cap of ${moneyView(paise(agent.capPaise)).amountDisplay}. ` +
+            "The Cap is immutable for this registration's lifetime.",
+          recoverable: false,
+        });
+      }
+
+      await tx.insert(orders).values({
+        id: orderId,
+        merchantId,
         agentId: agent.id,
-        intentHash: intentRow.hash,
-        cartHash: cartRow.hash,
-        paymentHash,
-        amountPaise: totalPaise,
-      },
-    });
-    await appendAuditEvent(tx, {
-      type: 'order.created',
-      merchantId,
-      orderId,
-      payload: {
-        agentId: agent.id,
-        cartHash: cartRow.hash,
-        items: cart.items.map((item) => ({ ...item })),
         amountPaise: totalPaise,
         currency: total.currency,
-      },
+        status: 'created',
+      });
+      await tx.insert(orderItems).values(
+        cart.items.map((item) => ({
+          id: newId('orderItem'),
+          orderId,
+          variantId: item.variantId,
+          quantity: item.quantity,
+          unitPricePaise: item.unitPricePaise,
+        })),
+      );
+      // Intent consumption, the house exactly-once pattern: the guard lives
+      // in the SQL, not in a read-then-write. Zero rows means another
+      // submission consumed this Intent after the pre-check above — the race
+      // path of INTENT_CONSUMED.
+      const consumed = await tx
+        .update(intentMandates)
+        .set({ consumedByOrderId: orderId })
+        .where(
+          and(eq(intentMandates.hash, intentRow.hash), isNull(intentMandates.consumedByOrderId)),
+        )
+        .returning({ id: intentMandates.id });
+      if (consumed.length === 0) {
+        throw new Refusal({
+          code: 'INTENT_CONSUMED',
+          reason:
+            `Intent ${intentRow.hash} was consumed by a concurrent submission. ` +
+            'Declare a new Intent for this purchase — a second purchase signs a new Intent.',
+          recoverable: true,
+        });
+      }
+      await tx.insert(paymentMandates).values({
+        id: newId('paymentMandate'),
+        agentId: agent.id,
+        merchantId,
+        cartHash: cartRow.hash,
+        idempotencyKey: request.idempotencyKey,
+        payload: paymentPayload,
+        hash: paymentHash,
+        agentSignature: paymentSignature,
+        orderId,
+      });
+      await appendAuditEvent(tx, {
+        type: 'payment.verified',
+        merchantId,
+        orderId,
+        payload: {
+          agentId: agent.id,
+          intentHash: intentRow.hash,
+          cartHash: cartRow.hash,
+          paymentHash,
+          amountPaise: totalPaise,
+        },
+      });
+      await appendAuditEvent(tx, {
+        type: 'order.created',
+        merchantId,
+        orderId,
+        payload: {
+          agentId: agent.id,
+          cartHash: cartRow.hash,
+          items: cart.items.map((item) => ({ ...item })),
+          amountPaise: totalPaise,
+          currency: total.currency,
+        },
+      });
     });
-  });
+  } catch (error) {
+    // The transaction is fully rolled back before either branch below runs,
+    // so the refusal-audit transaction never nests inside it.
+    if (error instanceof Refusal) {
+      return refuse(error.toPayload());
+    }
+    // The unique (agent_id, idempotency_key) index is the idempotency race
+    // backstop: two first-time submissions with one key can both miss the
+    // gate's lookup, and the loser lands here. Structured behavior — replay
+    // or IDEMPOTENCY_REUSE against the winning row — never a raw index error
+    // surfacing to the buyer.
+    if (isIdempotencyKeyConflict(error)) {
+      const [winner] = await db
+        .select()
+        .from(paymentMandates)
+        .where(
+          and(
+            eq(paymentMandates.agentId, agent.id),
+            eq(paymentMandates.idempotencyKey, request.idempotencyKey),
+          ),
+        )
+        .limit(1);
+      if (winner !== undefined) {
+        return replayOrRefuse(winner);
+      }
+    }
+    throw error;
+  }
 
   const reference = toGatewayReference(orderId);
   const description = cart.items
@@ -352,4 +499,112 @@ export async function submitPayment(
       signature: paymentSignature,
     },
   };
+}
+
+/**
+ * Rebuild the original SubmitPaymentResult from what the passed submission
+ * persisted: the Order row, its `order_items` joined to variants/products for
+ * titles and labels (history, not catalog — a Variant unpublished since then
+ * still renders), and the stored Payment mandate row. Audits
+ * `payment.replayed` against the original Order; no new rows, no gateway
+ * contact.
+ */
+async function replayOriginalResult(
+  db: Database,
+  agent: AgentRow,
+  existing: PaymentMandateRow,
+): Promise<SubmitPaymentResult> {
+  // Rows are written only by this codebase; re-parsing re-brands the Paise
+  // fields and fails loudly on out-of-band mutation.
+  const payload = parsePaymentMandatePayload(existing.payload);
+  const [orderRow] =
+    existing.orderId === null
+      ? []
+      : await db.select().from(orders).where(eq(orders.id, existing.orderId)).limit(1);
+  if (orderRow === undefined) {
+    throw new Error(
+      `Payment mandate ${existing.hash} names no Order to replay; the store was mutated out-of-band`,
+    );
+  }
+  // Crash window: the original submission died between the Order insert and
+  // the payment link issuance, so there is no result to replay. Resuming a
+  // half-finished checkout is not replay's job — fail loudly rather than
+  // contact the gateway under a key that promises no second call.
+  if (orderRow.gatewayPaymentLinkId === null || orderRow.paymentLinkUrl === null) {
+    throw new Error(
+      `Order ${orderRow.id} has no payment link; the original submission never completed, so its result cannot be replayed`,
+    );
+  }
+  const gatewayPaymentLinkId = orderRow.gatewayPaymentLinkId;
+  const paymentLinkUrl = orderRow.paymentLinkUrl;
+
+  const lines = await db
+    .select({
+      variantId: orderItems.variantId,
+      quantity: orderItems.quantity,
+      unitPricePaise: orderItems.unitPricePaise,
+      productTitle: products.title,
+      label: variants.label,
+    })
+    .from(orderItems)
+    .innerJoin(variants, eq(orderItems.variantId, variants.id))
+    .innerJoin(products, eq(variants.productId, products.id))
+    .where(eq(orderItems.orderId, orderRow.id))
+    .orderBy(orderItems.variantId);
+
+  // Own transaction, original Order: a replay is a real event on that
+  // purchase's chain, not a state change (ADR-0003's atomicity rule binds
+  // events to state changes; here there is none).
+  await db.transaction(async (tx) => {
+    await appendAuditEvent(tx, {
+      type: 'payment.replayed',
+      merchantId: orderRow.merchantId,
+      orderId: orderRow.id,
+      payload: {
+        agentId: agent.id,
+        idempotencyKey: existing.idempotencyKey,
+        cartHash: existing.cartHash,
+        paymentHash: existing.hash,
+        orderId: orderRow.id,
+      },
+    });
+  });
+
+  return {
+    orderId: orderRow.id,
+    status: orderRow.status,
+    total: moneyView(paise(orderRow.amountPaise)),
+    items: lines.map((line) => ({
+      variantId: line.variantId,
+      productTitle: line.productTitle,
+      label: line.label,
+      quantity: line.quantity,
+      unitPrice: moneyView(paise(line.unitPricePaise)),
+    })),
+    gatewayPaymentLinkId,
+    paymentLinkUrl,
+    paymentMandate: {
+      paymentHash: existing.hash,
+      payload,
+      signature: existing.agentSignature,
+    },
+  };
+}
+
+/**
+ * A Postgres unique violation (23505) on `payment_mandates_agent_idempotency_idx`,
+ * however the driver wrapped it — drizzle surfaces the pg error as the `cause`
+ * of a DrizzleQueryError, and the constraint name rides on the pg error (or,
+ * failing that, in its message).
+ */
+function isIdempotencyKeyConflict(error: unknown): boolean {
+  for (let cause: unknown = error; cause instanceof Error; cause = cause.cause) {
+    const pgError = cause as { readonly code?: unknown; readonly constraint?: unknown };
+    if (pgError.code === '23505') {
+      return typeof pgError.constraint === 'string'
+        ? pgError.constraint === 'payment_mandates_agent_idempotency_idx'
+        : cause.message.includes('payment_mandates_agent_idempotency_idx');
+    }
+  }
+  return false;
 }
