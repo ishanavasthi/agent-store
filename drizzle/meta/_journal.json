@@ -15,6 +15,13 @@
       "when": 1787523410794,
       "tag": "0001_append_only_audit",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1787694018105,
+      "tag": "0002_agent_registration",
+      "breakpoints": true
     }
   ]
 }

@@ -21,13 +21,14 @@
  */
 export type RefusalCode =
   | 'OUT_OF_STOCK'
-  // Reserved for T3/T4 — not yet reachable:
+  /** T3: the token presented matches no Agent registration (ADR-0001). */
+  | 'UNREGISTERED_AGENT'
+  // Reserved for T4 — not yet reachable:
   | 'OVER_BUDGET'
   | 'OVER_CAP'
   | 'IDEMPOTENCY_REUSE'
   | 'INTENT_CONSUMED'
   | 'PRICE_CHANGED'
-  | 'UNREGISTERED_AGENT'
   | 'INVALID_MANDATE';
 
 export interface RefusalPayload {
@@ -68,7 +69,12 @@ export class Refusal extends Error {
   }
 }
 
-export type ValidationErrorCode = 'INVALID_QUANTITY' | 'VARIANT_NOT_FOUND' | 'ORDER_NOT_FOUND';
+export type ValidationErrorCode =
+  | 'INVALID_QUANTITY'
+  | 'VARIANT_NOT_FOUND'
+  | 'ORDER_NOT_FOUND'
+  /** A Cap that is not a positive integer number of paise (CONTEXT.md → Money). */
+  | 'INVALID_CAP';
 
 /**
  * A malformed or unsatisfiable request. Deliberately a *different shape* from
