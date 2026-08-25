@@ -214,3 +214,15 @@ Why: T2's "happy-path purchase fully in-process with no network calls" needs a r
 Rejected: a Neon test database (network dependency, not CI-hermetic, fails the criterion); widening the production `Database` type to cover both drivers (prod type churn for a test concern); mocking drizzle (proves nothing about the audit-trigger claims).
 Revisit when: a Neon-vs-PGlite behavior divergence surfaces (none known).
 Tier: Likely (Claude ruling during T2, 2026-08-26 — flagged for veto; plan: docs/superpowers/plans/2026-08-26-t2-gateway-stub.md)
+
+## 2026-08-26: Ed25519 via node:crypto — no @noble/ed25519
+Why: PLAN §5 names `@noble/ed25519`, but Node has shipped Ed25519 natively (`generateKeyPairSync`/`sign`/`verify`) since v12 — the dependency would buy nothing and reopen the npm-10 lockfile trap (engineering-log 2026-08-24). The wire encoding is fixed once, in `src/domain/keys.ts`: base64 DER (SPKI public, PKCS8 private), base64 signatures — the T4 mandate chain and the eval buyer's client-side signer (DECISIONS 2026-08-23 "Split key custody") must use exactly this encoding.
+Rejected: `@noble/ed25519` (PLAN.md §5; a new dependency proving nothing extra).
+Revisit when: signing must run somewhere without node:crypto (a browser buyer) — nothing planned runs there.
+Tier: Likely (Claude ruling during T3, 2026-08-26 — flagged for veto)
+
+## 2026-08-26: Agent token stored plaintext; get_product stays open, commerce tools gated
+Why: two T3 design calls. (1) The Agent row already holds the custodial private key — custody *is* the design (ADR-0001) — so hashing the bearer token at rest would protect one secret sitting beside an unprotected one; it is stored plaintext and looked up by unique index. Refusal audit payloads record only that a token was presented, never the token. (2) `get_product` requires no token: a shop window is public, and registration gates transacting — `checkout` and `get_order_status` refuse `UNREGISTERED_AGENT` (with an `agent.refused` audit entry) without a valid one, which is where PLAN §10's unregistered-agent eval scenario lands.
+Rejected: SHA-256 token-at-rest (theater next to the stored private key); gating `get_product` (blinds unregistered buyers for zero trust win — the refusal must protect money, not the catalog).
+Revisit when: keys leave custody (post-v1 UAP direction) — then the token is the only secret and hashing earns its keep.
+Tier: Likely (Claude ruling during T3, 2026-08-26 — flagged for veto)
