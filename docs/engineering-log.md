@@ -1,0 +1,188 @@
+# Engineering log
+
+What broke while building this, and what fixed it. Newest entries first.
+
+`DECISIONS.md` records what we chose and why; this file records what surprised us. When a fix turned on a decision, the entry links there rather than restating it.
+
+Each entry is **Symptom → Cause → Fix → Lesson**. The Cause is the mechanism, not the guess that preceded it — an entry whose cause reads "probably X" is unfinished.
+
+---
+
+## 2026-08-24 — T1 walking skeleton: first deploy and first real purchase
+
+### Every checkout against real Razorpay rails failed
+
+**Symptom** — `checkout` over MCP returned `Failed to create Payment Link at Razorpay`. The same keys created a Payment Link fine via `curl`, so the credentials were not at fault.
+
+**Cause** — the payload sent `customer: {}`. The live API rejects an empty object outright: `BAD_REQUEST_ERROR — incorrect JSON object received - faulty key: customer`. The field has to be **absent**, not empty. Isolated by replaying our exact payload against the API and removing one field at a time.
+
+**Fix** — build the payload without `customer`. The Razorpay Node SDK's own types declare `customer` as required, which is wrong against the live API, so the payload is typed as `Omit<…, 'customer'>` and cast once at the call site with the reason written beside it. Pinned by a regression test asserting the key is absent.
+
+**Lesson** — a vendor SDK's types are a claim about the API, not the API. When the type system pushes you toward a payload the service rejects, trust the wire.
+
+### A gateway failure that could not be diagnosed from logs
+
+**Symptom** — the failure above surfaced to the operator as nothing but `Failed to create Payment Link at Razorpay`. Nothing in the deployment logs said why.
+
+**Cause** — the catch wrapped the error and discarded it. Razorpay nests the useful part at `error.error.description`.
+
+**Fix** — log the gateway's own `code` and `description` before wrapping.
+
+**Lesson** — an error message that omits the upstream's own words converts a two-minute fix into an investigation. Wrap for the caller; log for the operator.
+
+### Three `gateway.order_linked` events for one linking
+
+**Symptom** — the first real purchase produced an audit chain containing `gateway.order_linked` three times, though only one gateway order was ever linked. `order.paid` correctly appeared once.
+
+**Cause** — a read-then-write race. Razorpay fires `payment_link.paid`, `payment.captured` and `order.paid` for one purchase at effectively the same moment. The linking step tested `order.gatewayOrderId === null` against a row read earlier in the transaction, then wrote unconditionally, so all three concurrent webhooks saw `null` and all three linked. `order.paid` was immune because its guard already lived in the `WHERE` clause.
+
+**Fix** — move the guard into the statement: `UPDATE … WHERE id = ? AND gateway_order_id IS NULL … RETURNING`. Under READ COMMITTED the losers block on the row lock, re-evaluate `IS NULL` after the winner commits, and match nothing. Losers re-read the row before reporting a conflict rather than trusting their stale snapshot.
+
+**Lesson** — a guard read in application code is not a guard. Concurrency correctness belongs in the `WHERE` clause. This codebase already had the correct pattern twenty lines below the defect, which is the more useful lesson: check whether the invariant you need is already solved nearby.
+
+### A gateway order that no payment would ever hit
+
+**Symptom** — found in review before deploying. The audit chain recorded one gateway order id at checkout, and the Order row later held a different one.
+
+**Cause** — a Razorpay Payment Link mints its **own** internal gateway order. We were also creating one explicitly, recording its id, and then the webhook silently overwrote the column with the id the payment actually ran through. The chain and the row disagreed about which gateway object the money touched.
+
+**Fix** — the Payment Link is the sole checkout-time gateway artifact. `gatewayOrderId` is learned from the webhook, written exactly once as its own audit event, and a conflicting second value is recorded as an anomaly instead of overwriting. The `order_id` echoed by the link-create response is kept only as a non-authoritative hint.
+
+**Lesson** — when a provider creates objects on your behalf, find out which one the money actually moves through before recording anything as authoritative.
+
+### Orders marked paid without checking what was paid
+
+**Symptom** — found in review. Any `payment_succeeded` webhook flipped the Order to `paid`, and the `order.paid` audit payload carried the *order's* amount rather than the amount actually paid.
+
+**Fix** — compare the webhook's amount to the Order's before acknowledging money. A mismatch or a missing amount records a structured anomaly and leaves the Order untouched. The payload now carries the webhook's amount.
+
+**Lesson** — "the gateway said success" and "the gateway collected what we asked for" are different claims. Fail closed on the second.
+
+### A malformed webhook could be redelivered forever
+
+**Symptom** — found in review. A signed webhook carrying an unparseable amount raised a money-domain error, escaped as a 500, and Razorpay redelivers on any non-2xx — indefinitely.
+
+**Fix** — parse failures raise a webhook-parse error, and the route answers `200` with an `ignored` result and a log line.
+
+**Lesson** — with an at-least-once delivery system, a 5xx on a permanently bad payload is an infinite loop. Distinguish "retry me" from "this will never parse".
+
+### Reflected XSS in the audit view
+
+**Symptom** — found in review. `orderId` was interpolated unescaped into the audit HTML; the `href` was encoded but the visible text was not.
+
+**Fix** — escape on output, plus `encodeURIComponent` inside the href. Verified against a script probe.
+
+### Refusals that did not match the documented contract
+
+**Symptom** — found in review. Refusals shipped as `{code, message}`, and one error type spanned both a real Refusal (`OUT_OF_STOCK`) and a plain validation error (`INVALID_QUANTITY`).
+
+**Cause** — `CONTEXT.md` reserves **Refusal** for a trust-layer policy denial before money moves, carrying `{code, reason, recoverable, retryAfter?}`; a malformed request is neither a Refusal nor a Decline.
+
+**Fix** — a `Refusal` type with the documented shape and a code union, and a deliberately different validation-error type with no `recoverable`. Surfaced through MCP as distinct fields.
+
+**Lesson** — one type spanning two vocabulary categories means an agent client cannot tell retryable from terminal. See `CONTEXT.md`.
+
+### Nondeterministic webhook-to-Order matching
+
+**Symptom** — found in review. Matching used a single `OR` across several columns with `LIMIT 1` and no ordering, so an event matching two Orders resolved arbitrarily.
+
+**Fix** — strategies tried in strict priority order, each ordered and fetching two rows so a multi-match is *detected*; ambiguity records an anomaly and refuses to pay.
+
+### `npm ci` rejected the committed lockfile on every deploy target
+
+**Symptom** — the first two deploys died in about ten seconds: `npm error Missing: @esbuild/sunos-x64@0.28.2 from lock file`, plus the Windows platform packages. The lockfile did contain all 26 platform entries, so the message was misleading.
+
+**Cause** — an npm major mismatch. The dev machine runs Node 26 / npm 11, which records nested optional platform packages in a shape npm 10 rejects when it builds its install tree. Every deploy target runs Node 22, which ships npm 10.
+
+**Fix** — regenerate the lockfile under npm 10.9.3 and pin both halves in `package.json` (`engines.npm`, `packageManager`) so a later install on a newer Node cannot silently reintroduce it.
+
+**Lesson** — the lockfile is only reproducible against the npm that wrote it. Pin the package manager whenever the dev runtime differs from the deploy runtime.
+
+### `npm ci` in the Railway build command died with EBUSY
+
+**Symptom** — `EBUSY: resource busy or locked, rmdir '/app/node_modules/.cache'`, exit code 240.
+
+**Cause** — Nixpacks already runs `npm ci` in its own install phase and mounts `node_modules/.cache` as a build cache. Our build command ran `npm ci` a second time, which tries to clear `node_modules` and cannot remove the mount.
+
+**Fix** — the Railway build command builds only. Render still runs its own `npm ci`, because there the build command *is* the whole build.
+
+**Lesson** — a builder that installs for you turns an explicit install into a conflict. Deployment config does not port between platforms unchanged.
+
+### Migrations cannot run in Railway's build step
+
+**Symptom** — `migrate` failed on `CREATE SCHEMA IF NOT EXISTS "drizzle"` with `AggregateError [ETIMEDOUT]` opening `wss://…-pooler…neon.tech/v2`, while the deployed app was querying the same database happily.
+
+**Cause** — Railway's build sandbox cannot open the Neon WebSocket; its runtime network can.
+
+**Fix** — migrate and seed moved to `preDeployCommand`, which runs before any container takes traffic, preserving the invariant the build step protected: never serve new code against an old schema, and fail the deploy rather than crash-loop. Render keeps migrations in its build step, where the network reaches Neon.
+
+**Lesson** — build networks and runtime networks are different networks. Anything touching a database belongs in a release phase, not a build phase.
+
+### Testing stale code after a detached deploy
+
+**Symptom** — a fix was deployed, the deployment list showed `SUCCESS`, and the endpoint still exhibited the old behaviour. A cycle was spent re-diagnosing a bug that was already fixed.
+
+**Cause** — `railway up --detach` returns as soon as the upload completes. The `SUCCESS` being read belonged to the *previous* deployment.
+
+**Fix** — deploy without `--detach`, or poll the specific deployment id until it reports `SUCCESS`, before testing.
+
+**Lesson** — after any deploy, confirm the running build is the one you think it is before trusting what the endpoint tells you.
+
+### Green tests, broken type check
+
+**Symptom** — a newly added test passed under `vitest run` while `npm run typecheck` failed on it. The breakage was committed and deployed before it was noticed.
+
+**Cause** — the test cast a plain number into a branded `Paise` slot. Vitest transpiles without type checking; `tsconfig.json` includes tests but `tsconfig.build.json` excludes them, so the build stayed green too.
+
+**Fix** — brand the fixture through the domain helper. Run `typecheck` — not just `test` — before committing.
+
+**Lesson** — a passing test suite is not evidence the types hold, and the build can hide it if tests are excluded from the build config.
+
+### A transient Neon timeout failed a deploy
+
+**Symptom** — a deploy failed on the same Neon `ETIMEDOUT` as above, then succeeded on retry with no change.
+
+**Cause** — Neon's free tier scales to zero; a cold endpoint can time out the first connection.
+
+**Lesson** — a serverless database in a deploy's critical path makes cold starts a deploy failure mode. Warming the endpoint first, or retrying, is expected rather than exceptional.
+
+---
+
+## Standing traps in the environment
+
+Not bugs of ours — properties of the platforms that will mislead someone eventually.
+
+**Razorpay test mode**
+- Cancelling a payment still produces a **successful** payment, so "user cancels" can never be a failure scenario. The decline rehearsal uses `failure@razorpay` instead.
+- `success@razorpay` is a sandbox-only VPA. It must be **typed** into the checkout page; scanning the test QR with a real UPI app gives "invalid QR", because a real app has nothing to resolve. Test-mode cards deduct nothing — the keys are `rzp_test_*`, and the gateway refuses to construct on any other prefix.
+- Refunds work only against **captured** test payments.
+- There is no API-only payment completion on an unactivated account; the hosted page is the only path. This is why the human approving the link is the consent step rather than a workaround.
+- One purchase produces **three** webhooks (`payment_link.paid`, `payment.captured`, `order.paid`), all near-simultaneous, and any non-2xx is redelivered. Every webhook handler has to be both idempotent and concurrency-safe.
+
+**Hosting**
+- Render's free web service spins down after roughly 15 minutes idle; the keep-warm ping mitigates but does not eliminate the cold start.
+- Railway has no free tier: a $5 one-time trial credit valid 30 days, then $5/month or services pause.
+
+---
+
+## Standing tradeoffs
+
+### Two backends, one database
+
+Railway is primary and always-on; Render free is the K1 fallback. Both run the same commit against the same Neon database. See `DECISIONS.md` (2026-08-24).
+
+**Safe by construction:**
+- Only Railway's URL is registered with Razorpay, so only one backend receives payment events.
+- Even under double delivery, the paid transition is a single conditional `UPDATE … WHERE status <> 'paid' … RETURNING`. Postgres serializes it, so `order.paid` is written exactly once — a database guarantee, not application logic.
+- The seed is `onConflictDoNothing`; the audit log is append-only with transactional writes.
+- Sharing the database helps rather than hurts: an Order created through one backend resolves correctly when its webhook lands on the other.
+
+**The two real risks are about deploys, not runtime:**
+1. **Simultaneous migrations.** Both platforms run the migrator against one database with no coordinating lock. Concurrent runs produce a *failed deploy*, not a corrupted schema, because Postgres DDL is transactional — but it is avoidable.
+2. **Code/schema drift.** Railway deploys manually; Render auto-deploys on push. A destructive migration would break whichever backend is running older code.
+
+**Current practice:** deploy sequentially, Railway first, then sync Render. The stronger guardrail — turning off Render's auto-deploy — is not yet applied.
+
+### Deployment config diverges on purpose
+
+Render runs `npm ci` and migrations in its build command; Railway builds only and migrates in `preDeploy`. Both entries above explain why. Keep the divergence and the reasons beside each other in `render.yaml` and `railway.json`, so neither is "tidied" into matching the other.
