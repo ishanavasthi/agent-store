@@ -3,11 +3,12 @@ import type { Currency, Paise } from '../domain/money.js';
 /**
  * The payment-gateway seam (PLAN §5.4, spec "Injected seam #1").
  *
- * Two implementations are planned and only one exists today:
+ * Two implementations:
  *   - `RazorpayGateway` (T1) — the real Razorpay Node SDK, test mode.
- *   - the deterministic in-process stub (T2) — mints Payment Links, fires
- *     synthetic webhook events, and simulates Declines and Oversells on demand
- *     so the scripted eval suite is CI-runnable.
+ *   - `StubGateway` (T2) — deterministic and in-process: mints Payment Links,
+ *     returns synthetic webhook events for the harness to deliver, and
+ *     simulates Declines and Oversells on demand so the scripted eval suite
+ *     is CI-runnable.
  *
  * Everything the stub will need is therefore expressed here as data, never as
  * "call Razorpay": creating a link, verifying a webhook signature, and parsing
