@@ -1,10 +1,11 @@
 import { asc, eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { StorefrontDeps } from '../deps.js';
-import { auditEvents, merchants, products, variants } from '../db/schema.js';
+import { auditEvents, variants } from '../db/schema.js';
 import { checkout } from '../domain/checkout.js';
 import { applyGatewayWebhook, findOrderById, type WebhookOutcome } from '../domain/orders.js';
 import { createTestDatabase, type TestDatabaseHandle } from '../testSupport/pgliteDatabase.js';
+import { MERCHANT_ID, seedCatalog } from '../testSupport/seedCatalog.js';
 import { StubGateway, type SyntheticWebhook } from './stubGateway.js';
 
 /**
@@ -15,27 +16,6 @@ import { StubGateway, type SyntheticWebhook } from './stubGateway.js';
  * Webhook delivery mirrors `http/app.ts`'s route exactly: verify signature
  * over the raw bytes, parse, then `applyGatewayWebhook`.
  */
-
-const MERCHANT_ID = 'mrc_test_merchant';
-
-async function seedCatalog(db: StorefrontDeps['db'], stock: number): Promise<void> {
-  await db.insert(merchants).values({ id: MERCHANT_ID, name: 'Test Merchant' });
-  await db.insert(products).values({
-    id: 'prd_test_tee',
-    merchantId: MERCHANT_ID,
-    title: 'Oversized Tee',
-    status: 'published',
-  });
-  await db.insert(variants).values({
-    id: 'var_test_tee_default',
-    productId: 'prd_test_tee',
-    label: null,
-    isDefault: true,
-    pricePaise: 129900,
-    currency: 'INR',
-    stock,
-  });
-}
 
 async function deliver(deps: StorefrontDeps, hook: SyntheticWebhook): Promise<WebhookOutcome> {
   // The same three steps the webhook route performs, minus the socket.

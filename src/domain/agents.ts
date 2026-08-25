@@ -135,8 +135,9 @@ export async function requireRegisteredAgent(
 ): Promise<AgentRow> {
   const presented = agentToken?.trim() ?? '';
   if (presented !== '') {
-    // Equality via the unique index; a 256-bit random token makes the lookup
-    // itself the constant-time comparison that matters here.
+    // Plain equality via the unique index, not timingSafeEqual: the lookup is
+    // not constant-time, and doesn't need to be — recovering a 256-bit random
+    // token through a timing oracle is not a practical attack.
     const [row] = await db
       .select()
       .from(agents)

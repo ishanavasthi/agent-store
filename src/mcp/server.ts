@@ -54,6 +54,25 @@ function validationResult(error: ValidationError) {
   };
 }
 
+/**
+ * The one place domain errors become wire results. Every tool that can refuse
+ * or reject wraps its handler here, so a new tool (T4's next one included)
+ * inherits the mapping instead of copying the catch.
+ */
+function withToolErrors<Args extends unknown[], Result>(
+  handler: (...args: Args) => Promise<Result>,
+) {
+  return async (...args: Args) => {
+    try {
+      return await handler(...args);
+    } catch (error) {
+      if (error instanceof Refusal) return refusalResult(error);
+      if (error instanceof ValidationError) return validationResult(error);
+      throw error;
+    }
+  };
+}
+
 export function createMcpServer(deps: StorefrontDeps): McpServer {
   const server = new McpServer(
     { name: 'agent-store', version: '0.1.0' },
@@ -108,22 +127,16 @@ export function createMcpServer(deps: StorefrontDeps): McpServer {
           ),
       },
     },
-    async ({ capPaise }) => {
-      try {
-        const registration = await registerAgent(deps.db, deps.merchantId, { capPaise });
-        return textResult({
-          ...registration,
-          note:
-            'Keep agentToken for every subsequent call. Your private key stays in merchant ' +
-            'custody and is never returned. To change the Cap, register again: that mints ' +
-            'a new Agent with the new Cap.',
-        });
-      } catch (error) {
-        if (error instanceof Refusal) return refusalResult(error);
-        if (error instanceof ValidationError) return validationResult(error);
-        throw error;
-      }
-    },
+    withToolErrors(async ({ capPaise }) => {
+      const registration = await registerAgent(deps.db, deps.merchantId, { capPaise });
+      return textResult({
+        ...registration,
+        note:
+          'Keep agentToken for every subsequent call. Your private key stays in merchant ' +
+          'custody and is never returned. To change the Cap, register again: that mints ' +
+          'a new Agent with the new Cap.',
+      });
+    }),
   );
 
   server.registerTool(
@@ -146,37 +159,31 @@ export function createMcpServer(deps: StorefrontDeps): McpServer {
         quantity: z.number().int().min(1).max(10).default(1).describe('How many units to buy.'),
       },
     },
-    async ({ agentToken, variantId, quantity }) => {
-      try {
-        // The trust gate runs first — an unregistered agent is refused before
-        // any Order exists and before the gateway is ever touched.
-        await requireRegisteredAgent(deps.db, deps.merchantId, agentToken, 'checkout');
-        const result = await checkout(deps, {
-          merchantId: deps.merchantId,
-          variantId,
-          quantity: quantity ?? 1,
-        });
-        return textResult({
-          orderId: result.orderId,
-          status: result.status,
-          total: result.total,
-          quantity: result.quantity,
-          product: result.variant.productTitle,
-          variantId: result.variant.variantId,
-          paymentLinkUrl: result.paymentLinkUrl,
-          gatewayPaymentLinkId: result.gatewayPaymentLinkId,
-          nextStep:
-            'Give paymentLinkUrl to your human and ask them to approve it. ' +
-            'In Razorpay test mode the UPI id success@razorpay completes the payment. ' +
-            `Then call get_order_status with orderId ${result.orderId}.`,
-          auditUrl: `${deps.publicBaseUrl}/audit/${result.orderId}`,
-        });
-      } catch (error) {
-        if (error instanceof Refusal) return refusalResult(error);
-        if (error instanceof ValidationError) return validationResult(error);
-        throw error;
-      }
-    },
+    withToolErrors(async ({ agentToken, variantId, quantity }) => {
+      // The trust gate runs first — an unregistered agent is refused before
+      // any Order exists and before the gateway is ever touched.
+      await requireRegisteredAgent(deps.db, deps.merchantId, agentToken, 'checkout');
+      const result = await checkout(deps, {
+        merchantId: deps.merchantId,
+        variantId,
+        quantity: quantity ?? 1,
+      });
+      return textResult({
+        orderId: result.orderId,
+        status: result.status,
+        total: result.total,
+        quantity: result.quantity,
+        product: result.variant.productTitle,
+        variantId: result.variant.variantId,
+        paymentLinkUrl: result.paymentLinkUrl,
+        gatewayPaymentLinkId: result.gatewayPaymentLinkId,
+        nextStep:
+          'Give paymentLinkUrl to your human and ask them to approve it. ' +
+          'In Razorpay test mode the UPI id success@razorpay completes the payment. ' +
+          `Then call get_order_status with orderId ${result.orderId}.`,
+        auditUrl: `${deps.publicBaseUrl}/audit/${result.orderId}`,
+      });
+    }),
   );
 
   server.registerTool(
@@ -195,27 +202,21 @@ export function createMcpServer(deps: StorefrontDeps): McpServer {
         orderId: z.string().describe('The orderId returned by checkout (starts with ord_).'),
       },
     },
-    async ({ agentToken, orderId }) => {
-      try {
-        await requireRegisteredAgent(deps.db, deps.merchantId, agentToken, 'get_order_status');
-        const row = await findOrderById(deps.db, deps.merchantId, orderId);
-        if (row === null) {
-          return validationResult(
-            new ValidationError('ORDER_NOT_FOUND', `No order with id ${orderId}`),
-          );
-        }
-        const variant = await findPublishedVariant(deps.db, deps.merchantId, row.variantId);
-        return textResult({
-          ...toOrderStatusView(row),
-          product: variant?.productTitle ?? null,
-          auditUrl: `${deps.publicBaseUrl}/audit/${row.id}`,
-        });
-      } catch (error) {
-        if (error instanceof Refusal) return refusalResult(error);
-        if (error instanceof ValidationError) return validationResult(error);
-        throw error;
+    withToolErrors(async ({ agentToken, orderId }) => {
+      await requireRegisteredAgent(deps.db, deps.merchantId, agentToken, 'get_order_status');
+      const row = await findOrderById(deps.db, deps.merchantId, orderId);
+      if (row === null) {
+        return validationResult(
+          new ValidationError('ORDER_NOT_FOUND', `No order with id ${orderId}`),
+        );
       }
-    },
+      const variant = await findPublishedVariant(deps.db, deps.merchantId, row.variantId);
+      return textResult({
+        ...toOrderStatusView(row),
+        product: variant?.productTitle ?? null,
+        auditUrl: `${deps.publicBaseUrl}/audit/${row.id}`,
+      });
+    }),
   );
 
   return server;

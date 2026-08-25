@@ -2,11 +2,12 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { asc, eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { agents, auditEvents, merchants, orders, products, variants } from '../db/schema.js';
+import { agents, auditEvents, orders } from '../db/schema.js';
 import type { StorefrontDeps } from '../deps.js';
 import { signMessage, verifyMessage } from '../domain/keys.js';
 import { StubGateway } from '../gateway/stubGateway.js';
 import { createTestDatabase, type TestDatabaseHandle } from '../testSupport/pgliteDatabase.js';
+import { MERCHANT_ID, seedCatalog } from '../testSupport/seedCatalog.js';
 import { createMcpServer } from './server.js';
 
 /**
@@ -22,27 +23,6 @@ import { createMcpServer } from './server.js';
  * Assertions read the wire payloads and the audit/agents tables back — never
  * the server's internals.
  */
-
-const MERCHANT_ID = 'mrc_test_merchant';
-
-async function seedCatalog(db: StorefrontDeps['db'], stock: number): Promise<void> {
-  await db.insert(merchants).values({ id: MERCHANT_ID, name: 'Test Merchant' });
-  await db.insert(products).values({
-    id: 'prd_test_tee',
-    merchantId: MERCHANT_ID,
-    title: 'Oversized Tee',
-    status: 'published',
-  });
-  await db.insert(variants).values({
-    id: 'var_test_tee_default',
-    productId: 'prd_test_tee',
-    label: null,
-    isDefault: true,
-    pricePaise: 129900,
-    currency: 'INR',
-    stock,
-  });
-}
 
 /** One tool call as a buyer would make it, with the JSON body parsed back out. */
 async function call(
