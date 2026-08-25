@@ -94,7 +94,8 @@ export interface OrderStatusView {
   readonly orderId: string;
   readonly status: OrderStatus;
   readonly total: MoneyView;
-  readonly quantity: number;
+  /** Null on multi-item Orders (T4): the legacy single-variant columns are unset there. */
+  readonly quantity: number | null;
   readonly gatewayOrderId: string | null;
   readonly gatewayPaymentId: string | null;
   readonly gatewayPaymentLinkId: string | null;

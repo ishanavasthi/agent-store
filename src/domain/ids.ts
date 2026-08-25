@@ -10,6 +10,14 @@ const PREFIXES = {
   product: 'prd',
   variant: 'var',
   agent: 'agt',
+  orderItem: 'itm',
+  // The mandate family reads as `<i|c|p>md_` — intent/cart/payment mandate.
+  // Deliberately not `pay_`: that is Razorpay's prefix for gateway payment ids,
+  // and the two must never be mistaken for one another in a log.
+  intentMandate: 'imd',
+  cartMandate: 'cmd',
+  paymentMandate: 'pmd',
+  receipt: 'rcp',
 } as const;
 
 export type IdKind = keyof typeof PREFIXES;

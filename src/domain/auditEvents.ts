@@ -37,22 +37,45 @@ export const AUDIT_EVENT_TYPES = [
    * reason code" is checkable from this table alone.
    */
   'agent.refused',
+  // T4 — the mandate chain's own transitions (appended, so the pg enum grows
+  // by ALTER TYPE … ADD VALUE instead of a rebuild):
+  /** An Intent mandate was declared: Agent-signed want + Budget stored. */
+  'mandate.intent_declared',
+  /** A Cart mandate was created: immutable, both-sides-signed items + total + price hash. */
+  'mandate.cart_created',
+  /** The full mandate chain verified — the trust gate passed, money may now move. */
+  'payment.verified',
+  /** The trust gate refused a Payment mandate. Same Refusal payload shape as `agent.refused`. */
+  'payment.refused',
+  /** Merchant-signed Receipt minted for the paid Order, in the same tx as `order.paid`. */
+  'receipt.issued',
 ] as const;
 
 export type AuditEventType = (typeof AUDIT_EVENT_TYPES)[number];
 
 /**
- * The transitions a completed purchase must show. `gateway.order_linked` is
- * absent on purpose: Razorpay attaches a gateway order to a Payment Link, but
- * whether its id reaches us depends on which webhook event fired, so requiring
- * it would make a perfectly good purchase look incomplete.
+ * The transitions a completed purchase must show — since T4, the mandate-first
+ * path: chain declared and verified before the Order, Receipt after payment.
+ * `gateway.order_linked` is absent on purpose: Razorpay attaches a gateway
+ * order to a Payment Link, but whether its id reaches us depends on which
+ * webhook event fired, so requiring it would make a perfectly good purchase
+ * look incomplete.
+ *
+ * Pre-T4 paid Orders (real rows exist in the deployed DB) report
+ * `complete: false` at `/audit/:orderId` under this list. Deliberate and
+ * honest: they had no mandate chain, and the auditor should say so rather
+ * than grandfather them in.
  */
 export const REQUIRED_HAPPY_PATH: readonly AuditEventType[] = [
+  'mandate.intent_declared',
+  'mandate.cart_created',
+  'payment.verified',
   'order.created',
   'gateway.payment_link_attempted',
   'gateway.payment_link_issued',
   'gateway.webhook_received',
   'order.paid',
+  'receipt.issued',
 ];
 
 /** One-line human-readable rendering, for `GET /audit/:orderId` and the T7 viewer. */
@@ -67,6 +90,12 @@ export const AUDIT_EVENT_SUMMARIES: Record<AuditEventType, string> = {
   'order.anomaly_detected': 'Anomaly detected — the Order was deliberately not advanced',
   'agent.registered': 'Agent registered — custodial keypair minted, Cap declared',
   'agent.refused': 'Refused by the trust layer before any money moved — reason code in payload',
+  'mandate.intent_declared': 'Intent mandate declared — Agent-signed want and Budget recorded',
+  'mandate.cart_created':
+    'Cart mandate created — immutable snapshot of items, total and price hash, signed by both sides',
+  'payment.verified': 'Payment mandate verified — mandate chain checked, cleared to contact the gateway',
+  'payment.refused': 'Payment mandate refused before any money moved — reason code in payload',
+  'receipt.issued': 'Merchant-signed Receipt issued for the paid Order',
 };
 
 /**

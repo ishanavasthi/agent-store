@@ -210,7 +210,12 @@ export function createMcpServer(deps: StorefrontDeps): McpServer {
           new ValidationError('ORDER_NOT_FOUND', `No order with id ${orderId}`),
         );
       }
-      const variant = await findPublishedVariant(deps.db, deps.merchantId, row.variantId);
+      // Legacy single-variant Orders only; multi-item Orders (T4) have a null
+      // variantId and get their product detail from order_items instead.
+      const variant =
+        row.variantId === null
+          ? null
+          : await findPublishedVariant(deps.db, deps.merchantId, row.variantId);
       return textResult({
         ...toOrderStatusView(row),
         product: variant?.productTitle ?? null,
