@@ -8,6 +8,43 @@ Each entry is **Symptom → Cause → Fix → Lesson**. The Cause is the mechani
 
 ---
 
+## 2026-08-26 — T10 extraction spike
+
+### Every `node --experimental-strip-types src/…` script dies on its first import
+
+**Symptom** — running the new spike runner produced
+`ERR_MODULE_NOT_FOUND: Cannot find module '…/src/domain/money.js' imported from …/src/ingestion/spike/runExtractionSpike.ts`.
+The file it named does not exist and never will: the source is `money.ts`, and `dist/` is what
+holds `money.js`. `npm run db:seed` fails identically on `src/config.js`, so this is not
+specific to the new code — every npm script of the form
+`node --experimental-strip-types src/<entry>.ts` has the same failure, `db:seed`, `db:migrate`
+and `dev` included.
+
+**Cause** — Node's type stripping removes types and nothing else. It does **not** perform
+TypeScript's `.js` → `.ts` import-specifier remapping, so `import … from './money.js'` is
+resolved literally against the filesystem. This codebase writes `.js` specifiers everywhere
+because `verbatimModuleSyntax` + `NodeNext` require the *emitted* extension, which is correct
+for `tsc` and unrunnable by the stripper. Verified on the dev machine's Node 26.7; there is no
+flag that changes it — `node --help` offers only `--experimental-strip-types` /
+`--no-strip-types`, nothing about specifier resolution.
+
+Nothing caught this earlier because the deploy targets never run these scripts: Render and
+Railway run the compiled `db:migrate:prod` / `db:seed:prod` out of `dist`.
+
+**Fix** — `spike:extraction` compiles first and runs the built JavaScript:
+`npm run build && node dist/ingestion/spike/runExtractionSpike.js`. Relative fixture paths are
+unaffected because `dist/ingestion/spike/` sits at the same depth below the repo root as
+`src/ingestion/spike/`. The other three scripts are still broken on Node 26 and are left that
+way here rather than fixed in passing — this entry is so the next person recognises it in
+seconds instead of debugging a missing file.
+
+**Lesson** — type stripping is not a TypeScript runtime. It runs the file you wrote, with the
+types deleted; anything `tsc` would have *rewritten* on the way out — specifiers, enums,
+namespaces — is still there and still wrong. If the build already produces runnable output,
+run that.
+
+---
+
 ## 2026-08-24 — T1 walking skeleton: first deploy and first real purchase
 
 ### Every checkout against real Razorpay rails failed
