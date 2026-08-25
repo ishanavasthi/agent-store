@@ -55,9 +55,18 @@ refuse `UPDATE` and `DELETE` on `audit_events`, so the log is append-only at the
 This is what the T6 rule-auditor's "judged from the audit log alone" claim rests on.
 
 **The gateway sits behind an interface.** `src/gateway/types.ts` defines `PaymentGateway`;
-`razorpayGateway.ts` is the only file in the repo that imports the `razorpay` package. T2's
-deterministic stub implements the same interface and is swapped in at the composition root
-(`src/index.ts`) — nothing above the seam changes.
+`razorpayGateway.ts` is the only file in the repo that imports the `razorpay` package. The
+deterministic stub implements the same interface — nothing above the seam changes.
+
+`src/gateway/stubGateway.ts` is that stub. It reads no clock and draws no randomness, so the
+Nth call on a fresh instance always yields the same bytes. It mints `plink_stub_*` Payment
+Links and returns Razorpay-shaped webhook bodies, already signed, for the caller to deliver
+itself rather than waiting to be called over a socket. `completePayment` scripts a capture,
+`failPayment` scripts a Decline, and an Oversell is two completed captures against stock that
+covers one. `stubGateway.integration.test.ts` runs a whole purchase through it — checkout,
+webhooks, Order paid, audit chain — on an embedded PGlite Postgres carrying the committed
+migrations, with no network anywhere. Tests and the eval harness construct the stub at their
+own composition points; `src/index.ts` stays Razorpay-only.
 
 The interface deliberately has **no `createGatewayOrder`**. A Razorpay Payment Link mints
 its *own* internal gateway order, so creating one ourselves produced an object no payment
@@ -93,7 +102,6 @@ webhook path. See `src/domain/refusal.ts` and CONTEXT.md → Failure vocabulary.
 layer lands in that gap — `src/domain/checkout.ts` marks it as an explicit, commented phase
 that runs *before* any gateway call, so a Refusal will always mean zero money moved.
 
-- **T2** — the deterministic gateway stub (scriptable Declines and Oversells, CI-runnable evals).
 - **T3/T4** — `register_agent`, the Intent → Cart → Payment mandate chain, Budgets, Caps,
   idempotency, price-hash pinning, structured Refusals, signed Receipts.
 - **T7** — the React audit viewer over `GET /audit/:orderId`.
@@ -118,14 +126,16 @@ Checks:
 ```bash
 npm run typecheck   # tsc --noEmit, strict
 npm run build       # tsc -> dist/
-npm test            # vitest: pure helpers only, no database, no network
+npm test            # vitest: pure helpers plus in-process integration, no network
 ```
 
-`npm test` deliberately covers only pure helpers (paise arithmetic and formatting, audit
-event ordering, the Refusal/validation-error split, webhook signature verification and
-payload parsing, id/reference handling).
-Everything with a seam cost is tested at the protocol surface by the T6 eval harness rather
-than mocked here — see `PLAN.md` §6.
+`npm test` covers pure helpers (paise arithmetic and formatting, audit event ordering, the
+Refusal/validation-error split, webhook signature verification and payload parsing,
+id/reference handling) and the in-process purchase proof, which runs against the stub gateway
+and an embedded PGlite Postgres. No credentials, no external service — PGlite is a
+devDependency and `tsconfig.build.json` excludes `src/testSupport/`, so it never reaches
+`dist/`. Everything else with a seam cost is tested at the protocol surface by the T6 eval
+harness rather than mocked here — see `PLAN.md` §6.
 
 ### Environment variables
 
