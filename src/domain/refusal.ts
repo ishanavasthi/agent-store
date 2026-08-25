@@ -29,7 +29,7 @@ export type RefusalCode =
   | 'OVER_CAP'
   /** T5: idempotency key reused with a *different* cart hash. Recoverable — mint a fresh key. (Same hash replays instead.) */
   | 'IDEMPOTENCY_REUSE'
-  /** T5: this Intent was already consumed by its first paid Cart (1:1:1). Recoverable — declare a new Intent. */
+  /** T5: this Intent was already consumed at submission by the first Cart mandate to pass the trust gate (1:1:1). Recoverable — declare a new Intent. */
   | 'INTENT_CONSUMED'
   /** T4: the pinned price hash no longer matches the live catalog. Recoverable — re-run create_cart. */
   | 'PRICE_CHANGED'

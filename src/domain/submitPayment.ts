@@ -3,6 +3,7 @@ import type { Database } from '../db/client.js';
 import type { StorefrontDeps } from '../deps.js';
 import type { AgentRow, OrderStatus, PaymentMandateRow } from '../db/schema.js';
 import {
+  agents,
   intentMandates,
   orderItems,
   orders,
@@ -146,16 +147,7 @@ export async function submitPayment(
   // payment must replay even if the catalog has since moved (PRICE_CHANGED and
   // every later check would answer for the *new* submission, not the one the
   // buyer already made). Keys are buyer-minted and scoped Agent×Merchant.
-  const [existingMandate] = await db
-    .select()
-    .from(paymentMandates)
-    .where(
-      and(
-        eq(paymentMandates.agentId, agent.id),
-        eq(paymentMandates.idempotencyKey, request.idempotencyKey),
-      ),
-    )
-    .limit(1);
+  const existingMandate = await findMandateForIdempotencyKey(db, agent, request.idempotencyKey);
   if (existingMandate !== undefined) {
     return replayOrRefuse(existingMandate);
   }
@@ -288,11 +280,20 @@ export async function submitPayment(
       // cancelled/refunded free headroom. Not recoverable: the Cap is
       // immutable for the registration's lifetime (ADR-0001), and
       // cancellation/refund is not something the Agent can perform.
+      //
+      // The agents-row lock serializes this Agent's submissions: at READ
+      // COMMITTED, two concurrent transactions would otherwise both read the
+      // stale sum and jointly exceed the Cap.
+      await tx.select({ id: agents.id }).from(agents).where(eq(agents.id, agent.id)).for('update');
       const [cumulative] = await tx
         .select({ spent: sql<string>`coalesce(sum(${orders.amountPaise}), 0)` })
         .from(orders)
         .where(
-          and(eq(orders.agentId, agent.id), notInArray(orders.status, ['cancelled', 'refunded'])),
+          and(
+            eq(orders.agentId, agent.id),
+            eq(orders.merchantId, merchantId),
+            notInArray(orders.status, ['cancelled', 'refunded']),
+          ),
         );
       const spentPaise = paise(Number(cumulative?.spent ?? 0));
       if (spentPaise + totalPaise > agent.capPaise) {
@@ -392,16 +393,7 @@ export async function submitPayment(
     // or IDEMPOTENCY_REUSE against the winning row — never a raw index error
     // surfacing to the buyer.
     if (isIdempotencyKeyConflict(error)) {
-      const [winner] = await db
-        .select()
-        .from(paymentMandates)
-        .where(
-          and(
-            eq(paymentMandates.agentId, agent.id),
-            eq(paymentMandates.idempotencyKey, request.idempotencyKey),
-          ),
-        )
-        .limit(1);
+      const winner = await findMandateForIdempotencyKey(db, agent, request.idempotencyKey);
       if (winner !== undefined) {
         return replayOrRefuse(winner);
       }
@@ -589,6 +581,30 @@ async function replayOriginalResult(
       signature: existing.agentSignature,
     },
   };
+}
+
+/**
+ * The Payment mandate already holding this idempotency key, if any — scoped
+ * Agent×Merchant, the scope of the key itself (CONTEXT.md → Idempotency key).
+ * Shared by the trust gate's pre-check and the 23505 race backstop.
+ */
+async function findMandateForIdempotencyKey(
+  db: Database,
+  agent: AgentRow,
+  idempotencyKey: string,
+): Promise<PaymentMandateRow | undefined> {
+  const [row] = await db
+    .select()
+    .from(paymentMandates)
+    .where(
+      and(
+        eq(paymentMandates.agentId, agent.id),
+        eq(paymentMandates.merchantId, agent.merchantId),
+        eq(paymentMandates.idempotencyKey, idempotencyKey),
+      ),
+    )
+    .limit(1);
+  return row;
 }
 
 /**

@@ -30,11 +30,9 @@ import { createMcpServer } from './server.js';
  */
 
 const TEE = 'var_test_tee_default';
-const CAP = 'var_test_cap_default';
+/** A hat. Named to keep the Variant id apart from the Cap spend ceiling. */
+const CAP_VARIANT = 'var_test_cap_default';
 const TEE_PRICE = 129900; // the ₹499.00 cap rides alongside where a second price is needed
-
-/** Not yet in AUDIT_EVENT_TYPES on this branch; typed string so the comparison compiles either way. */
-const PAYMENT_REPLAYED: string = 'payment.replayed';
 
 describe('T5 enforcement, through the MCP tools', () => {
   let handle: TestDatabaseHandle;
@@ -76,10 +74,9 @@ describe('T5 enforcement, through the MCP tools', () => {
   }
 
   /**
-   * `submit_payment` with the parse failure turned into an assertion: the T5
-   * slot promises structured behavior on the wire — a raw DB error (today's
-   * duplicate-key path) surfacing as a non-JSON body IS the missing behavior,
-   * and must read as such, not as a harness crash.
+   * `submit_payment` with the parse failure turned into an assertion: the tool
+   * promises a structured JSON body on every path, so a non-JSON leak fails
+   * here with the leaked body in the message, not as a harness crash.
    */
   async function submit(
     cartHash: string,
@@ -176,7 +173,7 @@ describe('T5 enforcement, through the MCP tools', () => {
 
     // 129900 captured + 49900 pending would be 179800 > the 150000 Cap.
     const secondIntent = await declareIntent(400000, tightToken);
-    const secondCart = await createCart(secondIntent, [{ variantId: CAP, quantity: 1 }], tightToken);
+    const secondCart = await createCart(secondIntent, [{ variantId: CAP_VARIANT, quantity: 1 }], tightToken);
     const refused = await submit(secondCart['cartHash'] as string, randomUUID(), tightToken);
     expectRefusal(refused, 'OVER_CAP', false);
 
@@ -199,7 +196,7 @@ describe('T5 enforcement, through the MCP tools', () => {
     // No webhook delivered: the first Order never leaves awaiting_payment.
 
     const secondIntent = await declareIntent(400000, tightToken);
-    const secondCart = await createCart(secondIntent, [{ variantId: CAP, quantity: 1 }], tightToken);
+    const secondCart = await createCart(secondIntent, [{ variantId: CAP_VARIANT, quantity: 1 }], tightToken);
     const refused = await submit(secondCart['cartHash'] as string, randomUUID(), tightToken);
     expectRefusal(refused, 'OVER_CAP', false);
 
@@ -236,7 +233,7 @@ describe('T5 enforcement, through the MCP tools', () => {
     expect(chain.filter((e) => e.type === 'gateway.payment_link_issued')).toHaveLength(1);
 
     // The replay is itself an audited fact, attributed to the original Order.
-    const replayed = chain.filter((e) => e.type === PAYMENT_REPLAYED);
+    const replayed = chain.filter((e) => e.type === 'payment.replayed');
     expect(replayed).toHaveLength(1);
     expect(replayed[0]!.orderId).toBe(orderId);
     expect(replayed[0]!.payload).toMatchObject({ agentId, idempotencyKey: key, cartHash });
@@ -253,7 +250,7 @@ describe('T5 enforcement, through the MCP tools', () => {
     // The first Intent was consumed by that submission, so the different cart
     // rides a fresh Intent — isolating the key reuse as the only violation.
     const secondIntent = await declareIntent(400000);
-    const secondCart = await createCart(secondIntent, [{ variantId: CAP, quantity: 1 }]);
+    const secondCart = await createCart(secondIntent, [{ variantId: CAP_VARIANT, quantity: 1 }]);
     const refused = await submit(secondCart['cartHash'] as string, key);
     expectRefusal(refused, 'IDEMPOTENCY_REUSE', true);
 
@@ -277,7 +274,7 @@ describe('T5 enforcement, through the MCP tools', () => {
 
     // Creating another cart under the same Intent must still succeed — carts
     // coexist freely and have no lifecycle (ADR-0002). Paying it must not.
-    const cartB = await createCart(intentHash, [{ variantId: CAP, quantity: 1 }]);
+    const cartB = await createCart(intentHash, [{ variantId: CAP_VARIANT, quantity: 1 }]);
     const refused = await submit(cartB['cartHash'] as string, randomUUID());
     expectRefusal(refused, 'INTENT_CONSUMED', true);
 
@@ -294,6 +291,27 @@ describe('T5 enforcement, through the MCP tools', () => {
     });
   });
 
+  it('a gateway Decline is never labeled a Refusal: no payment.refused, no Refusal wire shape', async () => {
+    const intentHash = await declareIntent(400000);
+    const cart = await createCart(intentHash, [{ variantId: TEE, quantity: 1 }]);
+    const submitted = await submit(cart['cartHash'] as string, randomUUID());
+    expect(submitted.isError).toBe(false);
+    const orderId = submitted.body['orderId'] as string;
+
+    // The trust layer said yes; the gateway then says no. That is a Decline —
+    // recorded on the Order's chain, never a payment.refused event.
+    const hooks = gateway.failPayment(submitted.body['gatewayPaymentLinkId'] as string);
+    expect(await deliver(hooks[0]!)).toEqual({ result: 'recorded', orderId });
+
+    const chain = await auditChain(deps.db);
+    expect(chain.some((e) => e.type === 'payment.refused')).toBe(false);
+
+    const status = await call(client, 'get_order_status', { agentToken, orderId });
+    expect(status.isError).toBe(false);
+    expect(status.body['refusal']).toBeUndefined();
+    expect(status.body['status']).toBe('awaiting_payment');
+  });
+
   it('a refusal does not burn the idempotency key: the same key then pays a compliant cart', async () => {
     const key = randomUUID();
     const overIntent = await declareIntent(100000);
@@ -306,7 +324,7 @@ describe('T5 enforcement, through the MCP tools', () => {
     expect(await deps.db.select().from(paymentMandates)).toHaveLength(0);
 
     const goodIntent = await declareIntent(100000);
-    const goodCart = await createCart(goodIntent, [{ variantId: CAP, quantity: 1 }]);
+    const goodCart = await createCart(goodIntent, [{ variantId: CAP_VARIANT, quantity: 1 }]);
     const paid = await submit(goodCart['cartHash'] as string, key);
     expect(paid.isError).toBe(false);
     const orderId = paid.body['orderId'] as string;
