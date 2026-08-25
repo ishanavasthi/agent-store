@@ -1,14 +1,23 @@
 import { and, asc, eq, isNull, ne, type SQL } from 'drizzle-orm';
 import type { Database, Executor } from '../db/client.js';
-import { orders, type OrderRow, type OrderStatus } from '../db/schema.js';
+import {
+  orderItems,
+  orders,
+  products,
+  variants,
+  type OrderRow,
+  type OrderStatus,
+} from '../db/schema.js';
 import type { GatewayWebhookEvent } from '../gateway/types.js';
 import { namespaceGatewayEvent, type AnomalyReason } from './auditEvents.js';
 import { appendAuditEvent } from './auditLog.js';
 import { moneyView, paise, type MoneyView } from './money.js';
+import { mintReceiptForPaidOrder } from './receipts.js';
 
 /**
  * Domain Order reads, and the one write that money depends on: marking an
- * Order paid when a verified gateway webhook says so.
+ * Order paid — and minting its merchant-signed Receipt — when a verified
+ * gateway webhook says so.
  */
 
 export async function findOrderById(
@@ -94,7 +103,8 @@ export interface OrderStatusView {
   readonly orderId: string;
   readonly status: OrderStatus;
   readonly total: MoneyView;
-  readonly quantity: number;
+  /** Null on multi-item Orders (T4): the legacy single-variant columns are unset there. */
+  readonly quantity: number | null;
   readonly gatewayOrderId: string | null;
   readonly gatewayPaymentId: string | null;
   readonly gatewayPaymentLinkId: string | null;
@@ -305,6 +315,62 @@ export async function applyGatewayWebhook(
       },
     });
 
+    // Mint the merchant-signed Receipt in this same transaction. Exactly-once
+    // rides the one-way paid UPDATE above: only the delivery that won the
+    // `status <> 'paid'` transition reaches this line, so Razorpay's
+    // near-simultaneous sibling webhooks (see engineering log) can never mint
+    // twice — the `already_paid` branch returned before it.
+    await mintReceiptForPaidOrder(tx, {
+      merchantId,
+      orderId: order.id,
+      amountPaise: event.amountPaise,
+      gatewayPaymentId: event.gatewayPaymentId ?? order.gatewayPaymentId,
+      issuedAt: paidAt,
+      gatewayName,
+      gatewayEvent,
+    });
+
     return { result: 'order_paid', orderId: order.id } as const;
   });
 }
+
+/** One purchased line of an Order, as `get_order_status` reports it. */
+export interface OrderItemView {
+  readonly variantId: string;
+  readonly productTitle: string;
+  readonly label: string | null;
+  readonly quantity: number;
+  readonly unitPrice: MoneyView;
+}
+
+/**
+ * An Order's line items, joined to their catalog rows for display. Deliberately
+ * NOT filtered to `published`: a purchase already made must keep reporting what
+ * it bought even after the merchant unpublishes the product.
+ */
+export async function listOrderItems(
+  executor: Executor,
+  orderId: string,
+): Promise<OrderItemView[]> {
+  const rows = await executor
+    .select({
+      variantId: orderItems.variantId,
+      productTitle: products.title,
+      label: variants.label,
+      quantity: orderItems.quantity,
+      unitPricePaise: orderItems.unitPricePaise,
+    })
+    .from(orderItems)
+    .innerJoin(variants, eq(orderItems.variantId, variants.id))
+    .innerJoin(products, eq(variants.productId, products.id))
+    .where(eq(orderItems.orderId, orderId))
+    .orderBy(asc(orderItems.variantId));
+  return rows.map((row) => ({
+    variantId: row.variantId,
+    productTitle: row.productTitle,
+    label: row.label,
+    quantity: row.quantity,
+    unitPrice: moneyView(paise(row.unitPricePaise)),
+  }));
+}
+

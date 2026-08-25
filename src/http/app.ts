@@ -3,7 +3,7 @@ import express, { type Express, type NextFunction, type Request, type Response }
 import { MERCHANT_NAME } from '../config.js';
 import type { StorefrontDeps } from '../deps.js';
 import { missingHappyPathSteps } from '../domain/auditEvents.js';
-import { readAuditChain } from '../domain/auditLog.js';
+import { readPurchaseAuditChain } from '../domain/auditLog.js';
 import { applyGatewayWebhook, findOrderById, toOrderStatusView } from '../domain/orders.js';
 import { RAZORPAY_SIGNATURE_HEADER, WebhookParseError } from '../gateway/razorpayWebhook.js';
 import { createMcpServer } from '../mcp/server.js';
@@ -114,7 +114,10 @@ export function createApp(deps: StorefrontDeps): Express {
   app.get('/audit/:orderId', async (req: Request<{ orderId: string }>, res: Response) => {
     const orderId = req.params.orderId;
     const order = await findOrderById(deps.db, deps.merchantId, orderId);
-    const events = await readAuditChain(deps.db, orderId);
+    // The purchase-scoped read: includes the mandate events written before the
+    // Order existed, linked back through the Payment mandate's chain hashes —
+    // without them every mandate purchase would read as incomplete here.
+    const events = await readPurchaseAuditChain(deps.db, orderId);
 
     if (order === null && events.length === 0) {
       res.status(404).json({ error: 'order_not_found', orderId });

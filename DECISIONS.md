@@ -226,3 +226,33 @@ Why: two T3 design calls. (1) The Agent row already holds the custodial private 
 Rejected: SHA-256 token-at-rest (theater next to the stored private key); gating `get_product` (blinds unregistered buyers for zero trust win — the refusal must protect money, not the catalog).
 Revisit when: keys leave custody (post-v1 UAP direction) — then the token is the only secret and hashing earns its keep.
 Tier: Likely (Claude ruling during T3, 2026-08-26 — flagged for veto)
+
+## 2026-08-26: The mandate chain is the only purchase path — `checkout` is replaced by declare_intent / create_cart / submit_payment
+Why: the rule-auditor's headline claim — no charge without a complete verified mandate chain — is global, and a surviving tokens-only `checkout` tool would be a standing exception to it. The T1 walking-skeleton tool is deleted, not deprecated: the three-step chain (Intent → Cart → Payment) is now the one door money can move through, each tool gated by `requireRegisteredAgent` and mapped through the single `withToolErrors` seam. `checkout.ts` keeps its four-phase shape with the trust gate filled in at phase 3, strictly before the Order insert and before any gateway contact.
+Rejected: keeping plain `checkout` beside the mandate tools (two money paths, auditor claim becomes "no charge *usually*"); folding the whole chain into one mega-tool (loses the per-step signatures and the buyer's ability to re-cart on PRICE_CHANGED).
+Revisit when: never within this build.
+Tier: Likely (Claude ruling during T4, 2026-08-26 — flagged for veto)
+
+## 2026-08-26: Orders carry line items in `order_items`; the legacy single-variant columns are frozen
+Why: a Cart mandate carries Variant-level items (plural, per spec), and the T15 out-of-stock-mid-cart scenarios need real multi-item carts. New Orders write `order_items` rows plus `orders.agent_id`; `orders.variant_id` / `quantity` / `unit_price_paise` are never written again and stay only for pre-T4 rows. `orders.amount_paise` remains the authoritative total either way.
+Rejected: restricting Cart mandates to one Variant (falsifies the spec's item list and the eval scenarios); rewriting pre-T4 rows into `order_items` (a backfill that proves nothing and risks the audit story).
+Revisit when: never within this build.
+Tier: Likely (Claude ruling during T4, 2026-08-26 — flagged for veto)
+
+## 2026-08-26: Mandate error taxonomy — bad reference is a validation error, bad substance is a Refusal
+Why: keeps CONTEXT.md's failure vocabulary sharp at the new seam. A hash that names nothing (or another Agent's mandate) is malformed input → `ValidationError` (`INTENT_NOT_FOUND` / `CART_NOT_FOUND`, alongside new `INVALID_BUDGET`/`INVALID_WANT`/`INVALID_CART_ITEMS`). A mandate that exists but fails signature, chain-hash, or total verification is policy → `Refusal INVALID_MANDATE`, recoverable false. A pinned price hash that no longer matches the live catalog → `Refusal PRICE_CHANGED`, recoverable true — the buyer re-runs create_cart. Stock shortfall at payment stays `OUT_OF_STOCK`. Every submit_payment Refusal writes a `payment.refused` audit event (own transaction, orderId null — the `agent.refused` precedent) before throwing.
+Rejected: refusing on unknown hashes (would let a typo probe the policy layer and muddy "every Refusal has a reason code"); validation-erroring on tampered signatures (hides tampering from the audit log entirely).
+Revisit when: never within this build.
+Tier: Likely (Claude ruling during T4, 2026-08-26 — flagged for veto)
+
+## 2026-08-26: Receipts mint inside the paid-webhook transaction, only for mandate-backed Orders; buyers fetch them via get_order_status
+Why: the webhook is the moment payment becomes fact, and the one-way `UPDATE … WHERE status <> 'paid'` guard already makes that transition exactly-once under Razorpay's near-simultaneous triple deliveries — minting in the same transaction, after that guard, makes the Receipt exactly-once for free (the `already_paid` branch returns before it). Pre-T4 Orders have no chain to attest, so they get no Receipt. A missing merchant signing key at webhook time records `order.anomaly_detected` (`missing_merchant_signing_key`) and still returns 200 — redelivery would fix nothing, and the paid transition stands. Retrieval: the webhook is async, so `get_order_status` returns `receipt: {payload, signature, merchantPublicKey}` once paid — the public key rides along because no other endpoint publishes it yet, and "independently verifiable" is only honest if the verifier can actually get the key.
+Rejected: minting at submit_payment (would attest a payment that hasn't happened); a separate get_receipt tool (one more round-trip for no isolation win); throwing on a missing key (turns a provisioning gap into an infinite redelivery loop).
+Revisit when: a /.well-known-style key endpoint lands (then the inline key becomes a convenience, not the source).
+Tier: Likely (Claude ruling during T4, 2026-08-26 — flagged for veto)
+
+## 2026-08-26: T5 enforcement is a commented slot; T4 persists everything it will need
+Why: OVER_BUDGET, OVER_CAP, INTENT_CONSUMED and IDEMPOTENCY_REUSE are T5's suites (issue #6), but retrofitting their data later would mean schema churn mid-demo-week. So T4 stores Budget on the intent row, `orders.agent_id` for cumulative Cap math, `consumed_by_order_id` (always NULL in T4) for intent consumption, and a unique `(agent_id, idempotency_key)` index — and `submit_payment` carries one clearly-commented slot, after chain verification and before the Order insert, where those checks land. Additive enforcement, zero migration.
+Rejected: enforcing early (blows T4's review scope and duplicates T5's acceptance tests); persisting nothing (T5 would reopen every table T4 just shipped).
+Revisit when: T5 lands (the slot comment is deleted by the code that fills it).
+Tier: Likely (Claude ruling during T4, 2026-08-26 — flagged for veto)

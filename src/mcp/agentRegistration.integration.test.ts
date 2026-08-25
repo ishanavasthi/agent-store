@@ -2,10 +2,11 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { asc, eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { agents, auditEvents, orders } from '../db/schema.js';
+import { agents, orders } from '../db/schema.js';
 import type { StorefrontDeps } from '../deps.js';
 import { signMessage, verifyMessage } from '../domain/keys.js';
 import { StubGateway } from '../gateway/stubGateway.js';
+import { auditChain, call } from '../testSupport/mcpTestClient.js';
 import { createTestDatabase, type TestDatabaseHandle } from '../testSupport/pgliteDatabase.js';
 import { MERCHANT_ID, seedCatalog } from '../testSupport/seedCatalog.js';
 import { createMcpServer } from './server.js';
@@ -23,31 +24,6 @@ import { createMcpServer } from './server.js';
  * Assertions read the wire payloads and the audit/agents tables back — never
  * the server's internals.
  */
-
-/** One tool call as a buyer would make it, with the JSON body parsed back out. */
-async function call(
-  client: Client,
-  name: string,
-  args: Record<string, unknown>,
-): Promise<{ isError: boolean; body: Record<string, unknown> }> {
-  const result = await client.callTool({ name, arguments: args });
-  const content = result.content as Array<{ type: string; text: string }>;
-  return {
-    isError: result.isError === true,
-    body: JSON.parse(content[0]!.text) as Record<string, unknown>,
-  };
-}
-
-async function auditChain(db: StorefrontDeps['db']) {
-  return db
-    .select({
-      type: auditEvents.type,
-      orderId: auditEvents.orderId,
-      payload: auditEvents.payload,
-    })
-    .from(auditEvents)
-    .orderBy(asc(auditEvents.seq));
-}
 
 describe('agent registration and the token gate, through the MCP tools', () => {
   let handle: TestDatabaseHandle;
@@ -131,8 +107,11 @@ describe('agent registration and the token gate, through the MCP tools', () => {
     expect(firstRow!.publicKey).not.toBe(secondRow!.publicKey);
   });
 
-  it('checkout without a token refuses with {code, reason, recoverable} and writes an audit entry', async () => {
-    const { isError, body } = await call(client, 'checkout', { quantity: 1 });
+  it('declare_intent without a token refuses with {code, reason, recoverable} and writes an audit entry', async () => {
+    const { isError, body } = await call(client, 'declare_intent', {
+      want: 'a tee',
+      budgetPaise: 200000,
+    });
 
     expect(isError).toBe(true);
     const refusal = body['refusal'] as Record<string, unknown>;
@@ -146,15 +125,15 @@ describe('agent registration and the token gate, through the MCP tools', () => {
     expect('validationError' in body).toBe(false);
 
     // The refusal is on the audit log, unattributable to any Order (none was
-    // created), and the gateway was never approached: no order.created, no
-    // gateway.payment_link_attempted.
+    // created), and nothing mandate-shaped was minted: no mandate.intent_declared,
+    // no order.created, no gateway events.
     const chain = await auditChain(deps.db);
     expect(chain.map((e) => e.type)).toEqual(['agent.refused']);
     expect(chain[0]!.orderId).toBeNull();
     expect(chain[0]!.payload).toMatchObject({
       code: 'UNREGISTERED_AGENT',
       recoverable: true,
-      tool: 'checkout',
+      tool: 'declare_intent',
       tokenPresented: false,
     });
     expect(await deps.db.select().from(orders)).toHaveLength(0);
@@ -162,15 +141,16 @@ describe('agent registration and the token gate, through the MCP tools', () => {
 
   it('a forged token refuses identically — but without echoing the token into the log', async () => {
     const forged = 'agt_tok_forged-but-secret-shaped';
-    const { isError, body } = await call(client, 'checkout', {
+    const { isError, body } = await call(client, 'declare_intent', {
       agentToken: forged,
-      quantity: 1,
+      want: 'a tee',
+      budgetPaise: 200000,
     });
     expect(isError).toBe(true);
     expect((body['refusal'] as Record<string, unknown>)['code']).toBe('UNREGISTERED_AGENT');
 
     const chain = await auditChain(deps.db);
-    expect(chain[0]!.payload).toMatchObject({ tool: 'checkout', tokenPresented: true });
+    expect(chain[0]!.payload).toMatchObject({ tool: 'declare_intent', tokenPresented: true });
     // An almost-valid token is still a secret-shaped string; the log records
     // that one was presented, never which one.
     expect(JSON.stringify(chain[0]!.payload)).not.toContain(forged);
@@ -186,31 +166,32 @@ describe('agent registration and the token gate, through the MCP tools', () => {
     expect(chain[0]!.payload).toMatchObject({ tool: 'get_order_status' });
   });
 
-  it('a registered Agent passes the gate: checkout and get_order_status work with its token', async () => {
+  it('a registered Agent passes the gate: declare_intent and get_order_status accept its token', async () => {
     const registration = await call(client, 'register_agent', { capPaise: 500000 });
     const agentToken = registration.body['agentToken'] as string;
 
-    const checkoutResult = await call(client, 'checkout', { agentToken, quantity: 1 });
-    expect(checkoutResult.isError).toBe(false);
-    expect(checkoutResult.body['status']).toBe('awaiting_payment');
-    expect(checkoutResult.body['paymentLinkUrl']).toBe('https://stub.invalid/pay/plink_stub_1');
+    const intent = await call(client, 'declare_intent', {
+      agentToken,
+      want: 'a tee',
+      budgetPaise: 200000,
+    });
+    expect(intent.isError).toBe(false);
+    expect(intent.body['intentHash']).toMatch(/^[0-9a-f]{64}$/);
 
+    // Past the gate, a bad order reference is a *validation error* — the gate
+    // itself said yes (no refusal shape, no agent.refused entry).
     const status = await call(client, 'get_order_status', {
       agentToken,
-      orderId: checkoutResult.body['orderId'] as string,
+      orderId: 'ord_nonexistent',
     });
-    expect(status.isError).toBe(false);
-    expect(status.body['status']).toBe('awaiting_payment');
+    expect(status.isError).toBe(true);
+    expect((status.body['validationError'] as Record<string, unknown>)['code']).toBe(
+      'ORDER_NOT_FOUND',
+    );
+    expect('refusal' in status.body).toBe(false);
 
-    // The chain shows registration, then the ordinary T1 purchase events — and
-    // no agent.refused anywhere.
     const chain = await auditChain(deps.db);
-    expect(chain.map((e) => e.type)).toEqual([
-      'agent.registered',
-      'order.created',
-      'gateway.payment_link_attempted',
-      'gateway.payment_link_issued',
-    ]);
+    expect(chain.map((e) => e.type)).toEqual(['agent.registered', 'mandate.intent_declared']);
   });
 
   it('a non-integer Cap is rejected as INVALID_CAP; no float ever reaches storage', async () => {
@@ -233,6 +214,7 @@ describe('agent registration and the token gate, through the MCP tools', () => {
     // (DECISIONS.md, T3 ruling).
     const { isError, body } = await call(client, 'get_product', {});
     expect(isError).toBe(false);
-    expect(body['variants']).toHaveLength(1);
+    // The shared fixture publishes two Variants since T4 (tee + cap).
+    expect(body['variants']).toHaveLength(2);
   });
 });

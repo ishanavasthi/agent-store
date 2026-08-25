@@ -66,11 +66,18 @@ describe('missingHappyPathSteps', () => {
 
   it('names the steps still outstanding, in happy-path order', () => {
     const upToLink = [
-      event(1, 'order.created'),
-      event(2, 'gateway.payment_link_attempted'),
-      event(3, 'gateway.payment_link_issued'),
+      event(1, 'mandate.intent_declared'),
+      event(2, 'mandate.cart_created'),
+      event(3, 'payment.verified'),
+      event(4, 'order.created'),
+      event(5, 'gateway.payment_link_attempted'),
+      event(6, 'gateway.payment_link_issued'),
     ];
-    expect(missingHappyPathSteps(upToLink)).toEqual(['gateway.webhook_received', 'order.paid']);
+    expect(missingHappyPathSteps(upToLink)).toEqual([
+      'gateway.webhook_received',
+      'order.paid',
+      'receipt.issued',
+    ]);
   });
 
   it('does not require gateway.order_linked', () => {
@@ -90,13 +97,16 @@ describe('missingHappyPathSteps', () => {
 
   it('does not treat an anomaly as a completed purchase', () => {
     const anomalous = [
-      event(1, 'order.created'),
-      event(2, 'gateway.payment_link_attempted'),
-      event(3, 'gateway.payment_link_issued'),
-      event(4, 'gateway.webhook_received'),
-      event(5, 'order.anomaly_detected'),
+      event(1, 'mandate.intent_declared'),
+      event(2, 'mandate.cart_created'),
+      event(3, 'payment.verified'),
+      event(4, 'order.created'),
+      event(5, 'gateway.payment_link_attempted'),
+      event(6, 'gateway.payment_link_issued'),
+      event(7, 'gateway.webhook_received'),
+      event(8, 'order.anomaly_detected'),
     ];
-    expect(missingHappyPathSteps(anomalous)).toEqual(['order.paid']);
+    expect(missingHappyPathSteps(anomalous)).toEqual(['order.paid', 'receipt.issued']);
   });
 });
 

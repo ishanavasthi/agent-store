@@ -137,12 +137,21 @@ export const orders = pgTable(
     merchantId: text('merchant_id')
       .notNull()
       .references(() => merchants.id),
-    variantId: text('variant_id')
-      .notNull()
-      .references(() => variants.id),
-    quantity: integer('quantity').notNull(),
+    /**
+     * The registered Agent the Order was created for. Nullable because pre-T4
+     * rows predate agent-backed checkout; T5's cumulative Cap math sums per
+     * Agent×Merchant over these rows.
+     */
+    agentId: text('agent_id').references(() => agents.id),
+    /**
+     * Legacy single-variant shape (T1). Nullable since T4: line items live in
+     * `orderItems` and these stay only for rows that predate it. The Order's
+     * `amountPaise` remains the authoritative total either way.
+     */
+    variantId: text('variant_id').references(() => variants.id),
+    quantity: integer('quantity'),
     /** Unit price snapshotted at checkout, so a later catalog edit cannot rewrite history. */
-    unitPricePaise: integer('unit_price_paise').notNull(),
+    unitPricePaise: integer('unit_price_paise'),
     amountPaise: integer('amount_paise').notNull(),
     currency: text('currency').notNull().default('INR'),
     status: orderStatus('status').notNull().default('created'),
@@ -162,6 +171,168 @@ export const orders = pgTable(
     uniqueIndex('orders_gateway_order_id_idx').on(table.gatewayOrderId),
     uniqueIndex('orders_gateway_payment_link_id_idx').on(table.gatewayPaymentLinkId),
   ],
+);
+
+/**
+ * One purchased line of an Order (CONTEXT.md → Cart mandate: "Variant-level
+ * items", plural). Introduced in T4 because a Cart mandate carries N items
+ * while the legacy `orders` columns carried exactly one. `orders.amountPaise`
+ * stays the authoritative total; these rows are the breakdown.
+ */
+export const orderItems = pgTable(
+  'order_items',
+  {
+    id: text('id').primaryKey(),
+    orderId: text('order_id')
+      .notNull()
+      .references(() => orders.id),
+    variantId: text('variant_id')
+      .notNull()
+      .references(() => variants.id),
+    quantity: integer('quantity').notNull(),
+    /** Unit price snapshotted from the Cart mandate, not re-read from the catalog. */
+    unitPricePaise: integer('unit_price_paise').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index('order_items_order_idx').on(table.orderId)],
+);
+
+/**
+ * The mandate tables — insert-only records of *immutable signed artifacts*.
+ *
+ * ADR-0002 forbids a mutable draft cart, not storage of signed mandates: no
+ * code path updates a mandate row's payload or signatures, ever. Each `payload`
+ * jsonb is the exact canonical-signed payload; signatures are base64 text
+ * stored alongside it, never inside it (signing a payload containing its own
+ * signature would be circular). `hash` is sha256 of the canonical payload and
+ * is how chain links resolve — Cart embeds the Intent's hash, Payment embeds
+ * the Cart's (CONTEXT.md → Mandate chain).
+ */
+
+/** Root of the chain: Agent-signed want + Budget (CONTEXT.md → Intent mandate). */
+export const intentMandates = pgTable(
+  'intent_mandates',
+  {
+    id: text('id').primaryKey(),
+    agentId: text('agent_id')
+      .notNull()
+      .references(() => agents.id),
+    merchantId: text('merchant_id')
+      .notNull()
+      .references(() => merchants.id),
+    payload: jsonb('payload').notNull(),
+    hash: text('hash').notNull(),
+    /** The per-Intent spend ceiling (Budget, never "limit"/"quota"). Integer paise. */
+    budgetPaise: integer('budget_paise').notNull(),
+    agentSignature: text('agent_signature').notNull(),
+    /**
+     * T5's INTENT_CONSUMED marker: an Intent is consumed by the first *paid*
+     * Cart mandate. T4 only ever stores NULL; T5 writes it under a
+     * `WHERE consumed_by_order_id IS NULL` guard (the house exactly-once
+     * pattern — guards live in the SQL, not in a read-then-write).
+     */
+    consumedByOrderId: text('consumed_by_order_id').references(() => orders.id),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex('intent_mandates_hash_idx').on(table.hash),
+    index('intent_mandates_agent_idx').on(table.agentId),
+  ],
+);
+
+/**
+ * Both-sides-signed immutable snapshot of items + total + price hash
+ * (CONTEXT.md → Cart mandate). Deliberately NO status column: unpaid Cart
+ * mandates coexist freely and nothing ever invalidates one (ADR-0002).
+ */
+export const cartMandates = pgTable(
+  'cart_mandates',
+  {
+    id: text('id').primaryKey(),
+    agentId: text('agent_id')
+      .notNull()
+      .references(() => agents.id),
+    merchantId: text('merchant_id')
+      .notNull()
+      .references(() => merchants.id),
+    /** sha256 of the Intent mandate this cart was created under — the chain link. */
+    intentHash: text('intent_hash').notNull(),
+    payload: jsonb('payload').notNull(),
+    hash: text('hash').notNull(),
+    totalAmountPaise: integer('total_amount_paise').notNull(),
+    /** Pin of the priced items; payment-time recompute mismatch → PRICE_CHANGED. */
+    priceHash: text('price_hash').notNull(),
+    agentSignature: text('agent_signature').notNull(),
+    merchantSignature: text('merchant_signature').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex('cart_mandates_hash_idx').on(table.hash),
+    index('cart_mandates_agent_idx').on(table.agentId),
+  ],
+);
+
+/**
+ * Agent-signed authorization to pay one Cart mandate by hash, carrying the
+ * buyer-minted idempotency key (CONTEXT.md → Payment mandate).
+ */
+export const paymentMandates = pgTable(
+  'payment_mandates',
+  {
+    id: text('id').primaryKey(),
+    agentId: text('agent_id')
+      .notNull()
+      .references(() => agents.id),
+    merchantId: text('merchant_id')
+      .notNull()
+      .references(() => merchants.id),
+    /** sha256 of the Cart mandate being paid — the chain link. */
+    cartHash: text('cart_hash').notNull(),
+    /** Buyer-minted, scoped Agent×Merchant (DECISIONS 2026-08-23 idempotency). */
+    idempotencyKey: text('idempotency_key').notNull(),
+    payload: jsonb('payload').notNull(),
+    hash: text('hash').notNull(),
+    agentSignature: text('agent_signature').notNull(),
+    /** The Order this authorization produced, once verification passed. */
+    orderId: text('order_id').references(() => orders.id),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex('payment_mandates_hash_idx').on(table.hash),
+    /**
+     * One idempotency key, one Payment mandate, per Agent — so T5's
+     * IDEMPOTENCY_REUSE rule is enforceable in SQL rather than app logic.
+     */
+    uniqueIndex('payment_mandates_agent_idempotency_idx').on(
+      table.agentId,
+      table.idempotencyKey,
+    ),
+  ],
+);
+
+/**
+ * Merchant-signed proof of a paid Order: all three mandate hashes, amount,
+ * gateway payment id (CONTEXT.md → Receipt). A separate table rather than
+ * columns on `orders` — a T-later refund receipt can reference the original.
+ * `orderId` is unique: one Receipt per Order, minted exactly once in the same
+ * transaction as `order.paid`.
+ */
+export const receipts = pgTable(
+  'receipts',
+  {
+    id: text('id').primaryKey(),
+    merchantId: text('merchant_id')
+      .notNull()
+      .references(() => merchants.id),
+    orderId: text('order_id')
+      .notNull()
+      .references(() => orders.id),
+    payload: jsonb('payload').notNull(),
+    hash: text('hash').notNull(),
+    merchantSignature: text('merchant_signature').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [uniqueIndex('receipts_order_idx').on(table.orderId)],
 );
 
 /**
@@ -196,4 +367,9 @@ export type AgentRow = typeof agents.$inferSelect;
 export type ProductRow = typeof products.$inferSelect;
 export type VariantRow = typeof variants.$inferSelect;
 export type OrderRow = typeof orders.$inferSelect;
+export type OrderItemRow = typeof orderItems.$inferSelect;
+export type IntentMandateRow = typeof intentMandates.$inferSelect;
+export type CartMandateRow = typeof cartMandates.$inferSelect;
+export type PaymentMandateRow = typeof paymentMandates.$inferSelect;
+export type ReceiptRow = typeof receipts.$inferSelect;
 export type AuditEventRow = typeof auditEvents.$inferSelect;

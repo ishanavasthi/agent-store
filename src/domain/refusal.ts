@@ -23,12 +23,14 @@ export type RefusalCode =
   | 'OUT_OF_STOCK'
   /** T3: the token presented matches no Agent registration (ADR-0001). */
   | 'UNREGISTERED_AGENT'
-  // Reserved for T4 — not yet reachable:
+  // Reserved for T5's enforcement suites — not yet reachable:
   | 'OVER_BUDGET'
   | 'OVER_CAP'
   | 'IDEMPOTENCY_REUSE'
   | 'INTENT_CONSUMED'
+  /** T4: the pinned price hash no longer matches the live catalog. Recoverable — re-run create_cart. */
   | 'PRICE_CHANGED'
+  /** T4: a stored mandate fails signature, chain-hash, or total verification. Not recoverable. */
   | 'INVALID_MANDATE';
 
 export interface RefusalPayload {
@@ -74,7 +76,18 @@ export type ValidationErrorCode =
   | 'VARIANT_NOT_FOUND'
   | 'ORDER_NOT_FOUND'
   /** A Cap that is not a positive integer number of paise (CONTEXT.md → Money). */
-  | 'INVALID_CAP';
+  | 'INVALID_CAP'
+  /** A Budget that is not a positive integer number of paise — Cap's per-Intent sibling. */
+  | 'INVALID_BUDGET'
+  /** An Intent whose `want` is empty — a signed Intent must state an intent. */
+  | 'INVALID_WANT'
+  /** A Cart item list that is malformed as a *list* (empty, duplicate Variants). */
+  | 'INVALID_CART_ITEMS'
+  // A reference to a mandate hash that names nothing is malformed input, like
+  // VARIANT_NOT_FOUND — a mandate that EXISTS but fails signature or chain
+  // verification is policy, and refuses with INVALID_MANDATE instead.
+  | 'INTENT_NOT_FOUND'
+  | 'CART_NOT_FOUND';
 
 /**
  * A malformed or unsatisfiable request. Deliberately a *different shape* from
