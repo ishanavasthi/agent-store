@@ -1,11 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
-import { asc, eq } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   agents,
-  auditEvents,
   cartMandates,
   merchants,
   orderItems,
@@ -20,6 +19,7 @@ import { canonicalJson } from '../domain/canonicalJson.js';
 import { verifyMessage } from '../domain/keys.js';
 import { applyGatewayWebhook, type WebhookOutcome } from '../domain/orders.js';
 import { StubGateway, type SyntheticWebhook } from '../gateway/stubGateway.js';
+import { auditChain, call } from '../testSupport/mcpTestClient.js';
 import { createTestDatabase, type TestDatabaseHandle } from '../testSupport/pgliteDatabase.js';
 import { MERCHANT_ID, seedCatalog } from '../testSupport/seedCatalog.js';
 import { createMcpServer } from './server.js';
@@ -38,31 +38,6 @@ import { createMcpServer } from './server.js';
 
 const TEE = 'var_test_tee_default';
 const CAP = 'var_test_cap_default';
-
-/** One tool call as a buyer would make it, with the JSON body parsed back out. */
-async function call(
-  client: Client,
-  name: string,
-  args: Record<string, unknown>,
-): Promise<{ isError: boolean; body: Record<string, unknown> }> {
-  const result = await client.callTool({ name, arguments: args });
-  const content = result.content as Array<{ type: string; text: string }>;
-  return {
-    isError: result.isError === true,
-    body: JSON.parse(content[0]!.text) as Record<string, unknown>,
-  };
-}
-
-async function auditChain(db: StorefrontDeps['db']) {
-  return db
-    .select({
-      type: auditEvents.type,
-      orderId: auditEvents.orderId,
-      payload: auditEvents.payload,
-    })
-    .from(auditEvents)
-    .orderBy(asc(auditEvents.seq));
-}
 
 describe('the mandate chain, through the MCP tools', () => {
   let handle: TestDatabaseHandle;

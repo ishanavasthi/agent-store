@@ -4,14 +4,10 @@ import { MERCHANT_NAME } from '../config.js';
 import type { StorefrontDeps } from '../deps.js';
 import { registerAgent, requireRegisteredAgent } from '../domain/agents.js';
 import { findPublishedVariant, listPublishedVariants } from '../domain/catalog.js';
-import { submitPayment } from '../domain/checkout.js';
 import { createCart, declareIntent } from '../domain/mandateFlow.js';
-import {
-  findOrderById,
-  findOrderReceipt,
-  listOrderItems,
-  toOrderStatusView,
-} from '../domain/orders.js';
+import { findOrderById, listOrderItems, toOrderStatusView } from '../domain/orders.js';
+import { findOrderReceipt } from '../domain/receipts.js';
+import { submitPayment } from '../domain/submitPayment.js';
 import { Refusal, ValidationError } from '../domain/refusal.js';
 
 /**

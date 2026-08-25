@@ -76,6 +76,97 @@ export interface ReceiptPayload {
 
 export type MandatePayload = IntentMandatePayload | CartMandatePayload | PaymentMandatePayload;
 
+/**
+ * Parse a payload read back from a mandate/receipt row's jsonb column. These
+ * rows are written only by this codebase, so a shape mismatch means the store
+ * was mutated out-of-band — fail loudly rather than limp. Parsing is also
+ * where `Paise` fields regain their brand: a bare `as`-cast would smuggle
+ * unchecked numbers into money arithmetic (engineering-log "Green tests,
+ * broken type check" is the trap that rule guards against).
+ */
+function asRecord(value: unknown, what: string): Record<string, unknown> {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new Error(`Stored ${what} is not an object`);
+  }
+  return value as Record<string, unknown>;
+}
+
+function asString(record: Record<string, unknown>, key: string, what: string): string {
+  const value = record[key];
+  if (typeof value !== 'string') {
+    throw new Error(`Stored ${what} has a non-string ${key}`);
+  }
+  return value;
+}
+
+function asPaise(record: Record<string, unknown>, key: string, what: string): Paise {
+  const value = record[key];
+  if (typeof value !== 'number') {
+    throw new Error(`Stored ${what} has a non-number ${key}`);
+  }
+  return paise(value);
+}
+
+function asQuantity(record: Record<string, unknown>, key: string, what: string): number {
+  const value = record[key];
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 1) {
+    throw new Error(`Stored ${what} has an unsound ${key}`);
+  }
+  return value;
+}
+
+export function parseIntentMandatePayload(value: unknown): IntentMandatePayload {
+  const what = 'Intent mandate payload';
+  const record = asRecord(value, what);
+  return {
+    agentId: asString(record, 'agentId', what),
+    merchantId: asString(record, 'merchantId', what),
+    want: asString(record, 'want', what),
+    budgetPaise: asPaise(record, 'budgetPaise', what),
+    createdAt: asString(record, 'createdAt', what),
+  };
+}
+
+export function parseCartMandatePayload(value: unknown): CartMandatePayload {
+  const what = 'Cart mandate payload';
+  const record = asRecord(value, what);
+  const rawItems = record['items'];
+  if (!Array.isArray(rawItems)) {
+    throw new Error(`Stored ${what} has no items array`);
+  }
+  const items: CartItem[] = rawItems.map((rawItem) => {
+    const item = asRecord(rawItem, `${what} item`);
+    return {
+      variantId: asString(item, 'variantId', what),
+      quantity: asQuantity(item, 'quantity', what),
+      unitPricePaise: asPaise(item, 'unitPricePaise', what),
+    };
+  });
+  return {
+    agentId: asString(record, 'agentId', what),
+    merchantId: asString(record, 'merchantId', what),
+    intentHash: asString(record, 'intentHash', what),
+    items,
+    totalPaise: asPaise(record, 'totalPaise', what),
+    priceHash: asString(record, 'priceHash', what),
+    createdAt: asString(record, 'createdAt', what),
+  };
+}
+
+export function parseReceiptPayload(value: unknown): ReceiptPayload {
+  const what = 'Receipt payload';
+  const record = asRecord(value, what);
+  return {
+    orderId: asString(record, 'orderId', what),
+    intentHash: asString(record, 'intentHash', what),
+    cartHash: asString(record, 'cartHash', what),
+    paymentHash: asString(record, 'paymentHash', what),
+    amountPaise: asPaise(record, 'amountPaise', what),
+    gatewayPaymentId: asString(record, 'gatewayPaymentId', what),
+    issuedAt: asString(record, 'issuedAt', what),
+  };
+}
+
 /** The hash that names a mandate (or Receipt) everywhere else in the chain. */
 export function hashMandate(payload: MandatePayload | ReceiptPayload): string {
   return sha256Hex(canonicalJson(payload));

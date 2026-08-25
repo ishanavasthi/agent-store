@@ -2,10 +2,11 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { asc, eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { agents, auditEvents, orders } from '../db/schema.js';
+import { agents, orders } from '../db/schema.js';
 import type { StorefrontDeps } from '../deps.js';
 import { signMessage, verifyMessage } from '../domain/keys.js';
 import { StubGateway } from '../gateway/stubGateway.js';
+import { auditChain, call } from '../testSupport/mcpTestClient.js';
 import { createTestDatabase, type TestDatabaseHandle } from '../testSupport/pgliteDatabase.js';
 import { MERCHANT_ID, seedCatalog } from '../testSupport/seedCatalog.js';
 import { createMcpServer } from './server.js';
@@ -23,31 +24,6 @@ import { createMcpServer } from './server.js';
  * Assertions read the wire payloads and the audit/agents tables back — never
  * the server's internals.
  */
-
-/** One tool call as a buyer would make it, with the JSON body parsed back out. */
-async function call(
-  client: Client,
-  name: string,
-  args: Record<string, unknown>,
-): Promise<{ isError: boolean; body: Record<string, unknown> }> {
-  const result = await client.callTool({ name, arguments: args });
-  const content = result.content as Array<{ type: string; text: string }>;
-  return {
-    isError: result.isError === true,
-    body: JSON.parse(content[0]!.text) as Record<string, unknown>,
-  };
-}
-
-async function auditChain(db: StorefrontDeps['db']) {
-  return db
-    .select({
-      type: auditEvents.type,
-      orderId: auditEvents.orderId,
-      payload: auditEvents.payload,
-    })
-    .from(auditEvents)
-    .orderBy(asc(auditEvents.seq));
-}
 
 describe('agent registration and the token gate, through the MCP tools', () => {
   let handle: TestDatabaseHandle;

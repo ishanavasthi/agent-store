@@ -4,12 +4,14 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { StorefrontDeps } from '../deps.js';
 import { agents, auditEvents, orderItems, receipts, variants, type AgentRow } from '../db/schema.js';
 import { registerAgent } from '../domain/agents.js';
-import { submitPayment, type SubmitPaymentResult } from '../domain/checkout.js';
 import { createCart, declareIntent } from '../domain/mandateFlow.js';
+import { paise } from '../domain/money.js';
 import { applyGatewayWebhook, findOrderById, type WebhookOutcome } from '../domain/orders.js';
+import { submitPayment, type SubmitPaymentResult } from '../domain/submitPayment.js';
 import { createTestDatabase, type TestDatabaseHandle } from '../testSupport/pgliteDatabase.js';
 import { MERCHANT_ID, seedCatalog } from '../testSupport/seedCatalog.js';
 import { StubGateway, type SyntheticWebhook } from './stubGateway.js';
+import type { GatewayWebhookEvent } from './types.js';
 
 /**
  * T2's acceptance proof: a purchase runs fully in-process — StubGateway for
@@ -116,6 +118,42 @@ describe('in-process purchase against the stub', () => {
     const redelivered = await deliver(deps, hooks[0]!);
     expect(redelivered).toEqual({ result: 'already_paid', orderId: result.orderId });
     expect(await deps.db.select().from(receipts)).toHaveLength(1);
+  });
+
+  it('a success webhook with no gateway payment id pays the Order but skips the Receipt', async () => {
+    await seedCatalog(deps.db, 3);
+    const agent = await registeredAgent(deps);
+    const result = await placeOrder(deps, agent);
+
+    // The stub always reports a payment id, so this event is crafted directly
+    // at the domain seam a parsed webhook arrives through: a success with the
+    // right amount but no payment id from any source.
+    const event: GatewayWebhookEvent = {
+      kind: 'payment_succeeded',
+      rawEvent: 'payment_link.paid',
+      reference: result.orderId,
+      gatewayOrderId: null,
+      gatewayPaymentId: null,
+      gatewayPaymentLinkId: result.gatewayPaymentLinkId,
+      amountPaise: paise(129900),
+    };
+    const outcome = await applyGatewayWebhook(deps.db, MERCHANT_ID, event, 'stub');
+    expect(outcome).toEqual({ result: 'order_paid', orderId: result.orderId });
+
+    // The payment is real and stands; the Receipt is not minted — a Receipt
+    // attests WHICH charge the chain produced, and a blank binding is never
+    // signed. The gap is recorded as an anomaly, not thrown.
+    const order = await findOrderById(deps.db, MERCHANT_ID, result.orderId);
+    expect(order?.status).toBe('paid');
+    expect(await deps.db.select().from(receipts)).toHaveLength(0);
+    const chain = await deps.db
+      .select({ type: auditEvents.type, payload: auditEvents.payload })
+      .from(auditEvents)
+      .where(eq(auditEvents.orderId, result.orderId))
+      .orderBy(asc(auditEvents.seq));
+    expect(chain.some((e) => e.type === 'receipt.issued')).toBe(false);
+    const anomaly = chain.find((e) => e.type === 'order.anomaly_detected')!;
+    expect(anomaly.payload).toMatchObject({ reason: 'missing_gateway_payment_id' });
   });
 
   it('Decline on demand: payment.failed is recorded and the Order never becomes paid', async () => {

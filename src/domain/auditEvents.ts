@@ -117,7 +117,14 @@ export type AnomalyReason =
    * Receipt could be minted. The paid transition stands; the missing proof is
    * recorded instead of thrown — a webhook redelivery would fix nothing.
    */
-  | 'missing_merchant_signing_key';
+  | 'missing_merchant_signing_key'
+  /**
+   * A mandate-backed Order was paid but no source reported a gateway payment
+   * id, so the Receipt could not bind the charge it attests. Never sign a
+   * blank binding: the paid transition stands, the Receipt is skipped, and
+   * this anomaly says why.
+   */
+  | 'missing_gateway_payment_id';
 
 /**
  * Qualify a gateway's raw event name so it can never collide with one of ours.

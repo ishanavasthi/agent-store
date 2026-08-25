@@ -8,16 +8,16 @@ import { newId, toGatewayReference } from './ids.js';
 import {
   computePriceHash,
   hashMandate,
+  parseCartMandatePayload,
+  parseIntentMandatePayload,
   signMandate,
   verifyMandateChain,
   verifyMandateSignature,
   type CartItem,
-  type CartMandatePayload,
-  type IntentMandatePayload,
   type PaymentMandatePayload,
 } from './mandates.js';
 import { requireCartMandate, requireMerchantSigningKey, type CartLineView } from './mandateFlow.js';
-import { moneyView, paise, type MoneyView } from './money.js';
+import { moneyView, type MoneyView } from './money.js';
 import { Refusal, type RefusalPayload } from './refusal.js';
 
 /**
@@ -69,7 +69,7 @@ export async function submitPayment(
   // An unknown or foreign cartHash is a bad reference — a validation error,
   // never a Refusal (CONTEXT.md → Failure vocabulary).
   const cartRow = await requireCartMandate(db, agent, request.cartHash);
-  const cart = cartRow.payload as CartMandatePayload;
+  const cart = parseCartMandatePayload(cartRow.payload);
 
   // --- 2. Compose and custodially sign the Payment mandate ------------------
   const paymentPayload: PaymentMandatePayload = {
@@ -122,7 +122,7 @@ export async function submitPayment(
       recoverable: false,
     });
   }
-  const intent = intentRow.payload as IntentMandatePayload;
+  const intent = parseIntentMandatePayload(intentRow.payload);
 
   const merchantKey = await requireMerchantSigningKey(db, merchantId);
 
@@ -190,10 +190,18 @@ export async function submitPayment(
   // paid Orders per Agent×Merchant via `orders.agent_id`, INTENT_CONSUMED
   // guards `intent_mandates.consumed_by_order_id` in SQL, IDEMPOTENCY_REUSE
   // rides the unique (agent_id, idempotency_key) index on payment_mandates.
+  // Two facts T5 must not trip over: a *refused* submission persists no
+  // payment_mandates row (only passed verifications reach the insert below),
+  // so refusals never consume an idempotency key; and today a same-key retry
+  // of a passed payment surfaces as a raw unique-index DB error — T5 owns
+  // turning that into structured behavior (replay the original result on the
+  // same cartHash, refuse IDEMPOTENCY_REUSE on a different one), not into a
+  // reliance on the index alone.
 
   // --- 4. Create the domain Order -------------------------------------------
   const orderId = newId('order');
-  const totalPaise = paise(cart.totalPaise);
+  // Already branded: parseCartMandatePayload re-asserted every Paise field.
+  const totalPaise = cart.totalPaise;
   const total = moneyView(totalPaise);
 
   // Order, its line items, the Payment mandate row, and both audit events
@@ -333,7 +341,7 @@ export async function submitPayment(
         productTitle: variant.productTitle,
         label: variant.label,
         quantity: item.quantity,
-        unitPrice: moneyView(paise(item.unitPricePaise)),
+        unitPrice: moneyView(item.unitPricePaise),
       };
     }),
     gatewayPaymentLinkId: paymentLink.gatewayPaymentLinkId,

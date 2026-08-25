@@ -11,6 +11,7 @@ import {
 import { appendAuditEvent } from './auditLog.js';
 import { findPublishedVariant } from './catalog.js';
 import { newId } from './ids.js';
+import type { SigningKeypair } from './keys.js';
 import {
   computeCartTotal,
   computePriceHash,
@@ -138,6 +139,24 @@ export interface CreateCartResult {
   readonly items: readonly CartLineView[];
 }
 
+/**
+ * Resolve a mandate row by hash, scoped to this Agent. One shape for both
+ * mandate kinds: another Agent's mandate is as unusable as a nonexistent one,
+ * and the two answer identically so a hash probe cannot map other buyers'
+ * mandates. A bad reference is a validation error, never a Refusal.
+ */
+function requireOwnMandate<Row extends { readonly agentId: string }>(
+  agent: AgentRow,
+  row: Row | undefined,
+  code: 'INTENT_NOT_FOUND' | 'CART_NOT_FOUND',
+  message: string,
+): Row {
+  if (row === undefined || row.agentId !== agent.id) {
+    throw new ValidationError(code, message);
+  }
+  return row;
+}
+
 /** Resolve a stored Intent mandate for this Agent, or reject the reference. */
 export async function requireIntentMandate(
   db: Database,
@@ -149,15 +168,12 @@ export async function requireIntentMandate(
     .from(intentMandates)
     .where(and(eq(intentMandates.hash, intentHash), eq(intentMandates.merchantId, agent.merchantId)))
     .limit(1);
-  // Another Agent's Intent is as unusable as a nonexistent one, and the two
-  // answer identically so a hash probe cannot map other buyers' mandates.
-  if (row === undefined || row.agentId !== agent.id) {
-    throw new ValidationError(
-      'INTENT_NOT_FOUND',
-      `No Intent mandate of yours with hash ${intentHash}. Call declare_intent first and pass back the intentHash it returns.`,
-    );
-  }
-  return row;
+  return requireOwnMandate(
+    agent,
+    row,
+    'INTENT_NOT_FOUND',
+    `No Intent mandate of yours with hash ${intentHash}. Call declare_intent first and pass back the intentHash it returns.`,
+  );
 }
 
 /** Resolve a stored Cart mandate for this Agent, or reject the reference. */
@@ -171,13 +187,12 @@ export async function requireCartMandate(
     .from(cartMandates)
     .where(and(eq(cartMandates.hash, cartHash), eq(cartMandates.merchantId, agent.merchantId)))
     .limit(1);
-  if (row === undefined || row.agentId !== agent.id) {
-    throw new ValidationError(
-      'CART_NOT_FOUND',
-      `No Cart mandate of yours with hash ${cartHash}. Call create_cart first and pass back the cartHash it returns.`,
-    );
-  }
-  return row;
+  return requireOwnMandate(
+    agent,
+    row,
+    'CART_NOT_FOUND',
+    `No Cart mandate of yours with hash ${cartHash}. Call create_cart first and pass back the cartHash it returns.`,
+  );
 }
 
 /**
@@ -189,7 +204,7 @@ export async function requireCartMandate(
 export async function requireMerchantSigningKey(
   db: Database,
   merchantId: string,
-): Promise<{ publicKey: string; privateKey: string }> {
+): Promise<SigningKeypair> {
   const [row] = await db
     .select({
       publicKey: merchants.signingPublicKey,
