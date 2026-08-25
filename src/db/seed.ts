@@ -1,4 +1,5 @@
 import { MERCHANT_ID, MERCHANT_NAME, loadConfig } from '../config.js';
+import { ensureMerchantSigningKey } from '../domain/merchants.js';
 import { createDatabase } from './client.js';
 import { merchants, products, variants } from './schema.js';
 
@@ -29,6 +30,10 @@ async function seed(): Promise<void> {
       .values({ id: MERCHANT_ID, name: MERCHANT_NAME })
       .onConflictDoNothing();
 
+    // Idempotent like everything above: an existing merchant keeps its key —
+    // re-seeding must never rotate it under previously issued signatures.
+    const signingKey = await ensureMerchantSigningKey(db, MERCHANT_ID);
+
     await db
       .insert(products)
       .values({
@@ -56,6 +61,7 @@ async function seed(): Promise<void> {
       .onConflictDoNothing();
 
     console.log(`[seed] merchant ${MERCHANT_ID}`);
+    console.log(`[seed] merchant signing key ${signingKey.publicKey.slice(0, 16)}… (Ed25519)`);
     console.log(`[seed] product  ${PRODUCT_ID} (published)`);
     console.log(`[seed] variant  ${VARIANT_ID} — 129900 paise, stock 25`);
   } finally {
