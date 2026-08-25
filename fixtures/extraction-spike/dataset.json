@@ -1,0 +1,66 @@
+{
+  "$comment": "Hand-labeled ground truth for spike S3 (PLAN §7). See README.md in this directory for how the labels were decided and what counts as a match. Labels are the answer a careful human gives reading the caption and photo together; they are not model output.",
+  "merchant": "Kalaakar Streetwear",
+  "items": [
+    {
+      "id": "01-sabr-tee",
+      "image": "images/01-sabr-tee.jpg",
+      "caption": "naya drop finally aa gaya 🔥🖤\n\"SABR\" Oversized Tee — 240 GSM heavyweight cotton, boxy fit, pre-shrunk\nSizes: S / M / L / XL\n₹1,299/- only ✨ COD available\nsirf 12 pieces bache hain, jaldi DM karo 📩",
+      "label": {
+        "name": "SABR Oversized Tee",
+        "pricePaise": 129900,
+        "stock": 12,
+        "variantLabels": ["S", "M", "L", "XL"]
+      },
+      "tests": "Baseline. Name, price, stock and sizes are all stated plainly; if this one misses, nothing else will land."
+    },
+    {
+      "id": "02-utility-cargo-pants",
+      "image": "images/02-utility-cargo-pants.jpg",
+      "caption": "baggy cargos are BACK 😮‍💨🪖\nKalaakar Utility Cargo Pants — 6 pocket, ripstop cotton, elasticated waist\nwaist 30 / 32 / 34 / 36 sab available\nprice Rs 1,499 (all sizes same rate)\nstock ready ✅ DM karo bhai",
+      "label": {
+        "name": "Kalaakar Utility Cargo Pants",
+        "pricePaise": 149900,
+        "stock": null,
+        "variantLabels": ["30", "32", "34", "36"]
+      },
+      "tests": "Stock is stated as vibes, not a number. \"stock ready ✅\" must extract as null so the Product is held in needs-confirmation (spec story 6), not as some invented quantity."
+    },
+    {
+      "id": "03-dhuaan-hoodie",
+      "image": "images/03-dhuaan-hoodie.jpg",
+      "caption": "winter drop ❄️🔥 \"DHUAAN\" Hoodie\n380 GSM brushed fleece, kangaroo pocket, drop shoulder\nM L XL available\nMRP 2,999/- 👉 launch price sirf ₹1,899/-\n7 pcs left only, phir restock nahi 🏃",
+      "label": {
+        "name": "DHUAAN Hoodie",
+        "pricePaise": 189900,
+        "stock": 7,
+        "variantLabels": ["M", "L", "XL"]
+      },
+      "tests": "Two prices in one caption. The struck-through MRP is not what a buyer pays; picking 2999 here would overcharge every agent that bought one."
+    },
+    {
+      "id": "04-corduroy-bucket-hat",
+      "image": "images/04-corduroy-bucket-hat.jpg",
+      "caption": "ye toh must hai this season ☀️😎\ncorduroy, one size fits all, beige\n₹599/- only | free shipping above 999\nDM 📥",
+      "label": {
+        "name": "Corduroy Bucket Hat",
+        "pricePaise": 59900,
+        "stock": null,
+        "variantLabels": []
+      },
+      "tests": "The caption never says what the product IS — the name has to come from the photo. Also carries a second number (a free-shipping threshold) that is not a price, and no variants, so this is the implicit-default-Variant case."
+    },
+    {
+      "id": "05-chhaap-canvas-tote",
+      "image": "images/05-chhaap-canvas-tote.jpg",
+      "caption": "handloom se seedha 🧵💙\n\"CHHAAP\" Canvas Tote — 16oz canvas, hand block-printed indigo, inside pocket\nRs. 449/- 🌿 (2 per customer max, ek hi colour hai abhi)\n20 pcs ready to ship 🚚",
+      "label": {
+        "name": "CHHAAP Canvas Tote",
+        "pricePaise": 44900,
+        "stock": 20,
+        "variantLabels": []
+      },
+      "tests": "Three numbers, one of which is a per-customer purchase limit. Reading \"2 per customer max\" as stock would publish a catalog claiming 2 units when 20 exist."
+    }
+  ]
+}
