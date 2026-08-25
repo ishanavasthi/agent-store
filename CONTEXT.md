@@ -32,7 +32,7 @@ The Merchant's act of approving or correcting extracted fields whose confidence 
 ### Purchase flow
 
 **Intent mandate**:
-Agent-signed declaration of want plus Budget. Root of the mandate chain. Consumed by its first paid Cart mandate — one Intent authorizes at most one purchase; a second purchase needs a new Intent (refusal: `INTENT_CONSUMED`).
+Agent-signed declaration of want plus Budget. Root of the mandate chain. Consumed at submission by the first Cart mandate that passes the trust gate — one Intent authorizes at most one purchase; a second purchase needs a new Intent (refusal: `INTENT_CONSUMED`).
 
 **Cart mandate**:
 An immutable, both-sides-signed snapshot of exact Variant-level items, total, and price hash, returned by `create_cart` in one shot. There is **no stored, mutable cart** — the Agent holds its draft in its own context and "edits" by calling `create_cart` again (see ADR-0002).

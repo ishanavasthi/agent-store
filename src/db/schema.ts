@@ -139,8 +139,9 @@ export const orders = pgTable(
       .references(() => merchants.id),
     /**
      * The registered Agent the Order was created for. Nullable because pre-T4
-     * rows predate agent-backed checkout; T5's cumulative Cap math sums per
-     * Agent×Merchant over these rows.
+     * rows predate agent-backed checkout; the cumulative Cap math (T5's
+     * OVER_CAP) sums per Agent×Merchant over these rows, non-cancelled and
+     * non-refunded statuses counting.
      */
     agentId: text('agent_id').references(() => agents.id),
     /**
@@ -226,10 +227,11 @@ export const intentMandates = pgTable(
     budgetPaise: integer('budget_paise').notNull(),
     agentSignature: text('agent_signature').notNull(),
     /**
-     * T5's INTENT_CONSUMED marker: an Intent is consumed by the first *paid*
-     * Cart mandate. T4 only ever stores NULL; T5 writes it under a
-     * `WHERE consumed_by_order_id IS NULL` guard (the house exactly-once
-     * pattern — guards live in the SQL, not in a read-then-write).
+     * The INTENT_CONSUMED marker (T5): an Intent is consumed by the first
+     * Cart mandate that passes the trust gate. `submit_payment` writes it in
+     * the order-insert transaction under a `WHERE consumed_by_order_id IS
+     * NULL` guard (the house exactly-once pattern — guards live in the SQL,
+     * not in a read-then-write); zero rows updated rolls the Order back.
      */
     consumedByOrderId: text('consumed_by_order_id').references(() => orders.id),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -300,8 +302,9 @@ export const paymentMandates = pgTable(
   (table) => [
     uniqueIndex('payment_mandates_hash_idx').on(table.hash),
     /**
-     * One idempotency key, one Payment mandate, per Agent — so T5's
-     * IDEMPOTENCY_REUSE rule is enforceable in SQL rather than app logic.
+     * One idempotency key, one Payment mandate, per Agent. `submit_payment`
+     * checks the key up front (replay / IDEMPOTENCY_REUSE); this index is the
+     * race backstop that makes the rule hold in SQL, not just app logic.
      */
     uniqueIndex('payment_mandates_agent_idempotency_idx').on(
       table.agentId,

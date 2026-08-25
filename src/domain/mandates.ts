@@ -153,6 +153,18 @@ export function parseCartMandatePayload(value: unknown): CartMandatePayload {
   };
 }
 
+export function parsePaymentMandatePayload(value: unknown): PaymentMandatePayload {
+  const what = 'Payment mandate payload';
+  const record = asRecord(value, what);
+  return {
+    agentId: asString(record, 'agentId', what),
+    merchantId: asString(record, 'merchantId', what),
+    cartHash: asString(record, 'cartHash', what),
+    idempotencyKey: asString(record, 'idempotencyKey', what),
+    createdAt: asString(record, 'createdAt', what),
+  };
+}
+
 export function parseReceiptPayload(value: unknown): ReceiptPayload {
   const what = 'Receipt payload';
   const record = asRecord(value, what);
