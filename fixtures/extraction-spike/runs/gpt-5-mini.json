@@ -1,0 +1,213 @@
+{
+  "model": "gpt-5-mini",
+  "ranAt": "2026-08-25T18:52:59.579Z",
+  "elapsedSeconds": 22,
+  "accuracyFloor": 0.7,
+  "floorMet": true,
+  "dataset": {
+    "merchant": "Kalaakar Streetwear",
+    "items": 5
+  },
+  "summary": {
+    "items": 5,
+    "nameMatches": 5,
+    "priceMatches": 5,
+    "nameAndPriceMatches": 5,
+    "stockMatches": 5,
+    "variantMatches": 4,
+    "nameAndPriceAccuracy": 1
+  },
+  "records": [
+    {
+      "id": "01-sabr-tee",
+      "servedByModelId": "gpt-5-mini-2025-08-07",
+      "score": {
+        "id": "01-sabr-tee",
+        "name": {
+          "expected": "SABR Oversized Tee",
+          "actual": "Sabr Oversized Tee",
+          "match": true
+        },
+        "price": {
+          "expected": 129900,
+          "actual": 129900,
+          "match": true
+        },
+        "priceText": "₹1,299/-",
+        "nameAndPrice": true,
+        "stock": {
+          "expected": 12,
+          "actual": 12,
+          "match": true
+        },
+        "variantLabels": {
+          "expected": [
+            "S",
+            "M",
+            "L",
+            "XL"
+          ],
+          "actual": [
+            "S",
+            "M",
+            "L",
+            "XL"
+          ],
+          "match": true
+        },
+        "nameConfidence": 0.95,
+        "priceConfidence": 0.95
+      },
+      "raw": "{\n  \"name\": {\n    \"value\": \"Sabr Oversized Tee\",\n    \"confidence\": 0.95\n  },\n  \"description\": {\n    \"value\": \"240 GSM heavyweight cotton, boxy fit, pre-shrunk.\",\n    \"confidence\": 0.9\n  },\n  \"priceText\": {\n    \"value\": \"₹1,299/-\",\n    \"confidence\": 0.95\n  },\n  \"stock\": {\n    \"value\": 12,\n    \"confidence\": 0.95\n  },\n  \"variantLabels\": {\n    \"value\": [\n      \"S\",\n      \"M\",\n      \"L\",\n      \"XL\"\n    ],\n    \"confidence\": 0.95\n  }\n}"
+    },
+    {
+      "id": "02-utility-cargo-pants",
+      "servedByModelId": "gpt-5-mini-2025-08-07",
+      "score": {
+        "id": "02-utility-cargo-pants",
+        "name": {
+          "expected": "Kalaakar Utility Cargo Pants",
+          "actual": "Kalaakar Utility Cargo Pants",
+          "match": true
+        },
+        "price": {
+          "expected": 149900,
+          "actual": 149900,
+          "match": true
+        },
+        "priceText": "Rs 1,499",
+        "nameAndPrice": true,
+        "stock": {
+          "expected": null,
+          "actual": null,
+          "match": true
+        },
+        "variantLabels": {
+          "expected": [
+            "30",
+            "32",
+            "34",
+            "36"
+          ],
+          "actual": [
+            "30",
+            "32",
+            "34",
+            "36"
+          ],
+          "match": true
+        },
+        "nameConfidence": 0.95,
+        "priceConfidence": 0.95
+      },
+      "raw": "{\"name\":{\"value\":\"Kalaakar Utility Cargo Pants\",\"confidence\":0.95},\"description\":{\"value\":\"6-pocket ripstop cotton cargo pants with an elasticated waist.\",\"confidence\":0.9},\"priceText\":{\"value\":\"Rs 1,499\",\"confidence\":0.95},\"stock\":{\"value\":null,\"confidence\":0.0},\"variantLabels\":{\"value\":[\"30\",\"32\",\"34\",\"36\"],\"confidence\":0.95}}"
+    },
+    {
+      "id": "03-dhuaan-hoodie",
+      "servedByModelId": "gpt-5-mini-2025-08-07",
+      "score": {
+        "id": "03-dhuaan-hoodie",
+        "name": {
+          "expected": "DHUAAN Hoodie",
+          "actual": "Dhuaan Hoodie",
+          "match": true
+        },
+        "price": {
+          "expected": 189900,
+          "actual": 189900,
+          "match": true
+        },
+        "priceText": "₹1,899/-",
+        "nameAndPrice": true,
+        "stock": {
+          "expected": 7,
+          "actual": 7,
+          "match": true
+        },
+        "variantLabels": {
+          "expected": [
+            "M",
+            "L",
+            "XL"
+          ],
+          "actual": [
+            "M",
+            "L",
+            "XL"
+          ],
+          "match": true
+        },
+        "nameConfidence": 0.95,
+        "priceConfidence": 0.95
+      },
+      "raw": "{\n  \"name\": {\n    \"value\": \"Dhuaan Hoodie\",\n    \"confidence\": 0.95\n  },\n  \"description\": {\n    \"value\": \"380 GSM brushed fleece with kangaroo pocket and drop shoulder.\",\n    \"confidence\": 0.9\n  },\n  \"priceText\": {\n    \"value\": \"₹1,899/-\",\n    \"confidence\": 0.95\n  },\n  \"stock\": {\n    \"value\": 7,\n    \"confidence\": 0.95\n  },\n  \"variantLabels\": {\n    \"value\": [\n      \"M\",\n      \"L\",\n      \"XL\"\n    ],\n    \"confidence\": 0.95\n  }\n}"
+    },
+    {
+      "id": "04-corduroy-bucket-hat",
+      "servedByModelId": "gpt-5-mini-2025-08-07",
+      "score": {
+        "id": "04-corduroy-bucket-hat",
+        "name": {
+          "expected": "Corduroy Bucket Hat",
+          "actual": "Corduroy Bucket Hat",
+          "match": true
+        },
+        "price": {
+          "expected": 59900,
+          "actual": 59900,
+          "match": true
+        },
+        "priceText": "₹599/- only",
+        "nameAndPrice": true,
+        "stock": {
+          "expected": null,
+          "actual": null,
+          "match": true
+        },
+        "variantLabels": {
+          "expected": [],
+          "actual": [
+            "one size fits all",
+            "beige"
+          ],
+          "match": false
+        },
+        "nameConfidence": 0.9,
+        "priceConfidence": 0.98
+      },
+      "raw": "{\n  \"name\": {\n    \"value\": \"Corduroy Bucket Hat\",\n    \"confidence\": 0.9\n  },\n  \"description\": {\n    \"value\": \"Corduroy material; one size fits all. Beige colour.\",\n    \"confidence\": 0.95\n  },\n  \"priceText\": {\n    \"value\": \"₹599/- only\",\n    \"confidence\": 0.98\n  },\n  \"stock\": {\n    \"value\": null,\n    \"confidence\": 0\n  },\n  \"variantLabels\": {\n    \"value\": [\n      \"one size fits all\",\n      \"beige\"\n    ],\n    \"confidence\": 0.95\n  }\n}"
+    },
+    {
+      "id": "05-chhaap-canvas-tote",
+      "servedByModelId": "gpt-5-mini-2025-08-07",
+      "score": {
+        "id": "05-chhaap-canvas-tote",
+        "name": {
+          "expected": "CHHAAP Canvas Tote",
+          "actual": "CHHAAP Canvas Tote",
+          "match": true
+        },
+        "price": {
+          "expected": 44900,
+          "actual": 44900,
+          "match": true
+        },
+        "priceText": "Rs. 449/-",
+        "nameAndPrice": true,
+        "stock": {
+          "expected": 20,
+          "actual": 20,
+          "match": true
+        },
+        "variantLabels": {
+          "expected": [],
+          "actual": [],
+          "match": true
+        },
+        "nameConfidence": 0.95,
+        "priceConfidence": 0.95
+      },
+      "raw": "{\n  \"name\": {\n    \"value\": \"CHHAAP Canvas Tote\",\n    \"confidence\": 0.95\n  },\n  \"description\": {\n    \"value\": \"16oz canvas body, hand block-printed in indigo; includes an inside pocket.\",\n    \"confidence\": 0.95\n  },\n  \"priceText\": {\n    \"value\": \"Rs. 449/-\",\n    \"confidence\": 0.95\n  },\n  \"stock\": {\n    \"value\": 20,\n    \"confidence\": 0.95\n  },\n  \"variantLabels\": {\n    \"value\": [],\n    \"confidence\": 0.9\n  }\n}"
+    }
+  ]
+}
