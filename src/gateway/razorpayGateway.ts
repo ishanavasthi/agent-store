@@ -19,9 +19,10 @@ export interface RazorpayGatewayOptions {
 /**
  * The real Razorpay Node SDK, test mode only.
  *
- * This is the *only* file in the codebase that imports `razorpay`. T2's
- * deterministic stub implements the same `PaymentGateway` interface and is
- * swapped in at the composition root — nothing above this seam changes.
+ * This is the *only* file in the codebase that imports `razorpay`. The
+ * deterministic stub implements the same `PaymentGateway` interface, and tests
+ * and the eval harness construct it at their own composition points — the
+ * deployed server stays Razorpay-only, and nothing above this seam changes.
  *
  * Amounts cross this boundary unconverted: Razorpay is paise-denominated and so
  * are we, so there is no place for a rounding bug to live.
