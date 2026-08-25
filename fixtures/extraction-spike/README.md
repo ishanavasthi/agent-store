@@ -5,10 +5,13 @@ because the spec's story 36 is that the metrics must not be the project grading 
 homework: the labels are in the repo, so anyone can re-run the spike and check the number.
 
 ```
-npm run spike:extraction                     # the model configured in src/ingestion/extractionModel.ts
-npm run spike:extraction -- --model=gpt-5    # any other model, no code change
-npm run spike:extraction -- --out=run.json   # keep the raw model output for re-scoring
+npm run spike:extraction                                  # gpt-5-mini, the default
+EXTRACTION_MODEL=gpt-5 npm run spike:extraction           # the S3 step-up, no code change
+npm run spike:extraction -- --out=runs/gpt-5-mini.json    # keep the raw output for re-scoring
 ```
+
+Which model runs is the `EXTRACTION_MODEL` environment variable and nothing else — no
+source file names a model, so swapping one is configuration, not an edit (spec story 42).
 
 Requires `OPENAI_API_KEY`. This is a live billed call and deliberately **not** part of
 `npm test` — the deterministic suite must not depend on a model provider being up.
@@ -28,6 +31,18 @@ Five photo+caption pairs from the demo merchant, Kalaakar Streetwear.
 Each item is one product, sized so the whole set runs in well under a minute. This is a
 **spike** dataset for a go/no-go gate, not the demo catalog — that is T11, and it is where
 per-field accuracy across a realistic catalog gets reported.
+
+## The recorded runs
+
+`runs/gpt-5-mini.json` and `runs/gpt-5.json` are the actual runs the S3 result in
+`PLAN.md` §7 reports — the number in the prose is the number in these files, and if they
+ever disagree the file is right. Each holds the model asked for, the dated snapshot the
+provider actually served, when it ran and how long it took, the floor it was judged
+against, the per-item scores, and the raw JSON each call returned, so the whole run can be
+re-scored later without paying for it again.
+
+Re-running overwrites them with your own numbers. The dataset is fixed and the labels do
+not move, so that is the check — it is what "published ground truth" is for.
 
 ## How the labels were made
 
