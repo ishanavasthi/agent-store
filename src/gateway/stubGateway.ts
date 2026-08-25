@@ -54,9 +54,11 @@ interface StubLink {
   readonly reference: string;
   readonly amountPaise: Paise;
   readonly notes: Readonly<Record<string, string>>;
-  outcome: 'pending' | 'failed' | 'paid';
   failedAttempts: number;
-  /** Stored on first settle so redelivery is byte-identical. */
+  /**
+   * Stored on first capture so redelivery is byte-identical — and, being the
+   * only record of a capture, it is also what "already paid" means here.
+   */
   paidDeliveries: readonly SyntheticWebhook[] | null;
 }
 
@@ -80,7 +82,6 @@ export class StubGateway implements PaymentGateway {
       reference: params.reference,
       amountPaise: params.amountPaise,
       notes: { ...params.notes },
-      outcome: 'pending',
       failedAttempts: 0,
       paidDeliveries: null,
     };
@@ -137,7 +138,6 @@ export class StubGateway implements PaymentGateway {
       }),
       this.#delivery('payment.captured', { payment: { entity: paymentEntity } }),
     ];
-    link.outcome = 'paid';
     link.paidDeliveries = deliveries;
     return deliveries;
   }
@@ -153,12 +153,11 @@ export class StubGateway implements PaymentGateway {
    */
   failPayment(gatewayPaymentLinkId: string): readonly SyntheticWebhook[] {
     const link = this.#requireLink(gatewayPaymentLinkId);
-    if (link.outcome === 'paid') {
+    if (link.paidDeliveries !== null) {
       throw new GatewayError(
         `Payment link ${gatewayPaymentLinkId} already paid; a decline after capture is a contradictory script`,
       );
     }
-    link.outcome = 'failed';
     link.failedAttempts += 1;
     return [
       this.#delivery('payment.failed', {

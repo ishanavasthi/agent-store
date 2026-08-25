@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { StorefrontDeps } from '../deps.js';
 import { auditEvents, merchants, products, variants } from '../db/schema.js';
 import { checkout } from '../domain/checkout.js';
-import { applyGatewayWebhook, findOrderById } from '../domain/orders.js';
+import { applyGatewayWebhook, findOrderById, type WebhookOutcome } from '../domain/orders.js';
 import { createTestDatabase, type TestDatabaseHandle } from '../testSupport/pgliteDatabase.js';
 import { StubGateway, type SyntheticWebhook } from './stubGateway.js';
 
@@ -37,7 +37,7 @@ async function seedCatalog(db: StorefrontDeps['db'], stock: number): Promise<voi
   });
 }
 
-async function deliver(deps: StorefrontDeps, hook: SyntheticWebhook) {
+async function deliver(deps: StorefrontDeps, hook: SyntheticWebhook): Promise<WebhookOutcome> {
   // The same three steps the webhook route performs, minus the socket.
   expect(deps.gateway.verifyWebhookSignature(hook.rawBody, hook.signature)).toBe(true);
   const event = deps.gateway.parseWebhookEvent(hook.rawBody);

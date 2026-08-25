@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url';
 import { PGlite } from '@electric-sql/pglite';
 import { drizzle } from 'drizzle-orm/pglite';
 import { migrate } from 'drizzle-orm/pglite/migrator';
@@ -16,10 +17,17 @@ export interface TestDatabaseHandle {
   close(): Promise<void>;
 }
 
+/**
+ * Resolved from this file, not the cwd: any suite reusing this helper (T5, T15)
+ * may be invoked from a different directory, and a cwd-relative folder fails by
+ * migrating nothing rather than by throwing.
+ */
+const MIGRATIONS_FOLDER = fileURLToPath(new URL('../../drizzle', import.meta.url));
+
 export async function createTestDatabase(): Promise<TestDatabaseHandle> {
   const client = new PGlite();
   const db = drizzle({ client, schema });
-  await migrate(db, { migrationsFolder: 'drizzle' });
+  await migrate(db, { migrationsFolder: MIGRATIONS_FOLDER });
   // `Database` is nominally the Neon driver's type; the PGlite instance has
   // the same query/transaction surface the domain code uses. One cast here,
   // in test support, rather than widening the production type for a test.
