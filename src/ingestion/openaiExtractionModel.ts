@@ -59,17 +59,16 @@ Every field carries a confidence from 0 to 1: how sure you are that this exact v
 the merchant meant. Be honest and use the range — a field you had to infer from the photo, or
 a caption with two plausible readings, is not a 0.95. A null value takes confidence 0.`;
 
-interface FieldPayload<T> {
-  readonly value: T | null;
-  readonly confidence: number;
-}
-
+/**
+ * What the model returns, before we stop trusting it: the same per-field shape
+ * the seam publishes, since Structured Outputs is what puts it in that shape.
+ */
 interface ModelPayload {
-  readonly name: FieldPayload<string>;
-  readonly description: FieldPayload<string>;
-  readonly priceText: FieldPayload<string>;
-  readonly stock: FieldPayload<number>;
-  readonly variantLabels: FieldPayload<string[]>;
+  readonly name: ExtractedField<string>;
+  readonly description: ExtractedField<string>;
+  readonly priceText: ExtractedField<string>;
+  readonly stock: ExtractedField<number>;
+  readonly variantLabels: ExtractedField<readonly string[]>;
 }
 
 /** Structured Outputs strict mode: every key required, no extra keys, nullable via unions. */
@@ -95,32 +94,30 @@ const RESPONSE_SCHEMA = {
   additionalProperties: false,
 } as const;
 
+/**
+ * Reasoning effort for the gpt-5 family. `low` keeps a 5-item spike under a
+ * minute; the accuracy question is whether the model *reads* the caption right,
+ * which is not a long-reasoning problem.
+ */
+const REASONING_EFFORT = 'low';
+
+/** Generous: a truncated response is an `incomplete` status, not bad JSON. */
+const MAX_OUTPUT_TOKENS = 4000;
+
 export interface OpenAIExtractionModelOptions {
   /** e.g. `gpt-5-mini`. Set by `extractionModel.ts`, not by callers. */
   readonly model: string;
   readonly apiKey: string;
-  /**
-   * Reasoning effort for the gpt-5 family. `low` keeps a 5-item spike under a
-   * minute; the accuracy question is whether the model *reads* the caption
-   * right, which is not a long-reasoning problem.
-   */
-  readonly reasoningEffort?: 'minimal' | 'low' | 'medium' | 'high';
-  /** Generous: a truncated response is an `incomplete` status, not bad JSON. */
-  readonly maxOutputTokens?: number;
 }
 
 export class OpenAIExtractionModel implements ExtractionModel {
-  readonly name: string;
+  readonly modelId: string;
 
-  readonly #options: Required<OpenAIExtractionModelOptions>;
+  readonly #options: OpenAIExtractionModelOptions;
 
   constructor(options: OpenAIExtractionModelOptions) {
-    this.name = options.model;
-    this.#options = {
-      reasoningEffort: 'low',
-      maxOutputTokens: 4000,
-      ...options,
-    };
+    this.modelId = options.model;
+    this.#options = options;
   }
 
   async extract(input: ExtractionInput): Promise<ExtractionResult> {
@@ -139,8 +136,8 @@ export class OpenAIExtractionModel implements ExtractionModel {
       model: this.#options.model,
       instructions: INSTRUCTIONS,
       input: [{ role: 'user', content }],
-      reasoning: { effort: this.#options.reasoningEffort },
-      max_output_tokens: this.#options.maxOutputTokens,
+      reasoning: { effort: REASONING_EFFORT },
+      max_output_tokens: MAX_OUTPUT_TOKENS,
       text: {
         format: {
           type: 'json_schema',

@@ -11,8 +11,9 @@ import type { Paise } from '../domain/money.js';
  *     ingestion-logic tests never touch the network.
  *
  * Which OpenAI model runs is a *parameter of the implementation*, not a
- * property of the seam: stepping gpt-5-mini → gpt-5 for the S3 gate is one
- * line in `extractionModel.ts` (spec story 42), and nothing else moves.
+ * property of the seam: stepping gpt-5-mini → gpt-5 for the S3 gate is the
+ * `EXTRACTION_MODEL` environment variable (spec story 42 — a config change, not
+ * a refactor), and no source file moves.
  *
  * **The model does not compute money.** It reports the price *verbatim as the
  * caption wrote it* (`priceText`), and deterministic code in `price.ts` turns
@@ -78,7 +79,11 @@ export interface ExtractionInput {
 
 export interface ExtractionResult {
   readonly extraction: ProductExtraction;
-  /** The model id the provider says served the request, for the record. */
+  /**
+   * The model id the provider says actually served the request — usually the
+   * dated snapshot behind the alias in `ExtractionModel.modelId`, which is the
+   * form worth writing into an audit payload or a spike run record.
+   */
   readonly modelId: string;
   /** Raw JSON the model emitted, kept so a spike run can be re-scored later. */
   readonly rawResponse: string;
@@ -92,8 +97,8 @@ export class ExtractionError extends Error {
 }
 
 export interface ExtractionModel {
-  /** Identifies the implementation in audit payloads and spike reports. */
-  readonly name: string;
+  /** The model this implementation was configured to call, e.g. `gpt-5-mini`. */
+  readonly modelId: string;
 
   extract(input: ExtractionInput): Promise<ExtractionResult>;
 }

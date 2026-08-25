@@ -1,7 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { paise } from '../../domain/money.js';
+import { MoneyError, paise } from '../../domain/money.js';
 import type { ProductExtraction } from '../types.js';
-import { namesMatch, normalizeName, pricesMatch, scoreItem, summarize } from './scoring.js';
+import {
+  namesMatch,
+  normalizeName,
+  parseSpikeLabel,
+  pricesMatch,
+  scoreItem,
+  summarize,
+} from './scoring.js';
 
 /**
  * The metric that decides kill criterion K2 gets tested like anything else that
@@ -20,12 +27,25 @@ function extraction(overrides: Partial<ProductExtraction> = {}): ProductExtracti
   };
 }
 
-const label = {
+const label = parseSpikeLabel({
   name: 'SABR Oversized Tee',
   pricePaise: 129900,
   stock: 12,
   variantLabels: ['S', 'M', 'L', 'XL'],
-};
+});
+
+describe('parseSpikeLabel', () => {
+  it('brands a well-formed label price as paise', () => {
+    expect(parseSpikeLabel({ ...label, pricePaise: 59900 }).pricePaise).toBe(paise(59900));
+  });
+
+  it('refuses a label price that is not whole paise', () => {
+    // A hand-typed label is where a fractional or rupee-scaled price gets in,
+    // and a wrong label scores every model wrong — loudly beats silently.
+    expect(() => parseSpikeLabel({ ...label, pricePaise: 1299.5 })).toThrow(MoneyError);
+    expect(() => parseSpikeLabel({ ...label, pricePaise: -1 })).toThrow(MoneyError);
+  });
+});
 
 describe('normalizeName', () => {
   it('folds away punctuation, case and spacing', () => {
@@ -52,9 +72,9 @@ describe('namesMatch', () => {
 
 describe('pricesMatch', () => {
   it('is integer-paise equality with no tolerance', () => {
-    expect(pricesMatch(129900, paise(129900))).toBe(true);
-    expect(pricesMatch(129900, paise(129901))).toBe(false);
-    expect(pricesMatch(129900, null)).toBe(false);
+    expect(pricesMatch(paise(129900), paise(129900))).toBe(true);
+    expect(pricesMatch(paise(129900), paise(129901))).toBe(false);
+    expect(pricesMatch(paise(129900), null)).toBe(false);
   });
 });
 

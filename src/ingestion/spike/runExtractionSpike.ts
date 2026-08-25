@@ -1,17 +1,22 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { formatPaise, paise } from '../../domain/money.js';
-import { EXTRACTION_MODEL, createExtractionModel } from '../extractionModel.js';
-import type { ExtractionModel, ProductExtraction } from '../types.js';
-import { type ItemScore, type SpikeLabel, scoreItem, summarize } from './scoring.js';
+import { type Paise, formatPaise } from '../../domain/money.js';
+import { createExtractionModel } from '../extractionModel.js';
+import type { ExtractionModel } from '../types.js';
+import { type ItemScore, type SpikeLabel, parseSpikeLabel, scoreItem, summarize } from './scoring.js';
 
 /**
  * Spike S3 (PLAN §7): run the extraction model over the hand-labeled fixture
  * dataset and report name+price exact-match.
  *
- *   npm run spike:extraction                     # the configured default model
- *   npm run spike:extraction -- --model=gpt-5    # the K2 step-up run
+ *   npm run spike:extraction                                   # the default model
+ *   EXTRACTION_MODEL=gpt-5 npm run spike:extraction            # the S3 step-up
+ *   npm run spike:extraction -- --out=runs/gpt-5-mini.json     # keep the record
+ *
+ * Which model runs is configuration and nothing else (spec story 42): this
+ * script has no model flag of its own, so a recorded run and a production
+ * ingestion run pick their model through the same `EXTRACTION_MODEL`.
  *
  * The script compiles first and runs out of `dist` rather than running the
  * `.ts` directly under `--experimental-strip-types`: type stripping does not
@@ -37,7 +42,6 @@ interface DatasetItem {
   readonly image: string;
   readonly caption: string;
   readonly label: SpikeLabel;
-  readonly tests: string;
 }
 
 interface Dataset {
@@ -45,14 +49,30 @@ interface Dataset {
   readonly items: readonly DatasetItem[];
 }
 
-function parseArgs(argv: readonly string[]): { model: string; out: string | null } {
-  let model = EXTRACTION_MODEL;
-  let out: string | null = null;
-  for (const arg of argv) {
-    if (arg.startsWith('--model=')) model = arg.slice('--model='.length);
-    else if (arg.startsWith('--out=')) out = arg.slice('--out='.length);
-  }
-  return { model, out };
+/**
+ * `dataset.json` is untrusted input like any other file on disk — the labels
+ * are hand-written, and `parseSpikeLabel` is where a mistyped price stops the
+ * run instead of quietly scoring every model against a wrong answer.
+ */
+function parseDataset(raw: string): Dataset {
+  const json = JSON.parse(raw) as {
+    merchant: string;
+    items: { id: string; image: string; caption: string; label: SpikeLabel }[];
+  };
+  return {
+    merchant: json.merchant,
+    items: json.items.map((item) => ({
+      id: item.id,
+      image: item.image,
+      caption: item.caption,
+      label: parseSpikeLabel(item.label),
+    })),
+  };
+}
+
+function parseOutPath(argv: readonly string[]): string | null {
+  const flag = argv.find((arg) => arg.startsWith('--out='));
+  return flag === undefined ? null : flag.slice('--out='.length);
 }
 
 async function loadImage(relativePath: string): Promise<{ mediaType: string; base64: string }> {
@@ -60,32 +80,32 @@ async function loadImage(relativePath: string): Promise<{ mediaType: string; bas
   return { mediaType: 'image/jpeg', base64: bytes.toString('base64') };
 }
 
-function describePrice(value: number | null): string {
-  return value === null ? '—' : formatPaise(paise(value));
+function describePrice(value: Paise | null): string {
+  return value === null ? '—' : formatPaise(value);
 }
 
-function reportItem(item: DatasetItem, score: ItemScore, extraction: ProductExtraction): void {
+function reportItem(score: ItemScore): void {
   const mark = (ok: boolean): string => (ok ? 'PASS' : 'FAIL');
-  console.log(`\n${item.id}`);
+  console.log(`\n${score.id}`);
   console.log(`  name   ${mark(score.name.match)}  expected ${JSON.stringify(score.name.expected)}`);
   console.log(`                  got      ${JSON.stringify(score.name.actual)} (conf ${score.nameConfidence.toFixed(2)})`);
   console.log(`  price  ${mark(score.price.match)}  expected ${describePrice(score.price.expected)}`);
-  console.log(`                  got      ${describePrice(score.price.actual)} from ${JSON.stringify(extraction.priceText.value)} (conf ${score.priceConfidence.toFixed(2)})`);
+  console.log(`                  got      ${describePrice(score.price.actual)} from ${JSON.stringify(score.priceText)} (conf ${score.priceConfidence.toFixed(2)})`);
   console.log(`  stock  ${mark(score.stock.match)}  expected ${String(score.stock.expected)}  got ${String(score.stock.actual)}`);
   console.log(`  sizes  ${mark(score.variantLabels.match)}  expected ${JSON.stringify(score.variantLabels.expected)}  got ${JSON.stringify(score.variantLabels.actual)}`);
 }
 
 async function run(): Promise<void> {
-  const { model: modelName, out } = parseArgs(process.argv.slice(2));
-  const dataset = JSON.parse(await readFile(resolve(FIXTURES, 'dataset.json'), 'utf8')) as Dataset;
-  const model: ExtractionModel = createExtractionModel(modelName);
+  const out = parseOutPath(process.argv.slice(2));
+  const dataset = parseDataset(await readFile(resolve(FIXTURES, 'dataset.json'), 'utf8'));
+  const model: ExtractionModel = createExtractionModel();
 
   console.log(`Spike S3 — extraction quality floor`);
-  console.log(`  model:   ${model.name}`);
+  console.log(`  model:   ${model.modelId}`);
   console.log(`  dataset: ${String(dataset.items.length)} items, merchant "${dataset.merchant}"`);
   console.log(`  metric:  name + price exact-match vs hand labels (floor ${String(ACCURACY_FLOOR * 100)}%)`);
 
-  const started = Date.now();
+  const startedAt = new Date();
   // Sequential rather than concurrent: five items take under a minute either
   // way, and a serial run keeps the per-item output readable and rate limits
   // out of the picture.
@@ -99,14 +119,15 @@ async function run(): Promise<void> {
     });
     const score = scoreItem(item.id, item.label, result.extraction);
     scores.push(score);
-    records.push({ id: item.id, modelId: result.modelId, score, raw: result.rawResponse });
-    reportItem(item, score, result.extraction);
+    records.push({ id: item.id, servedByModelId: result.modelId, score, raw: result.rawResponse });
+    reportItem(score);
   }
 
   const summary = summarize(scores);
+  const elapsedSeconds = Math.round((Date.now() - startedAt.getTime()) / 1000);
   const percent = (n: number): string => `${(n * 100).toFixed(0)}%`;
 
-  console.log(`\n--- ${model.name} · ${String(Math.round((Date.now() - started) / 1000))}s ---`);
+  console.log(`\n--- ${model.modelId} · ${String(elapsedSeconds)}s ---`);
   console.log(`  name+price exact-match : ${String(summary.nameAndPriceMatches)}/${String(summary.items)}  ${percent(summary.nameAndPriceAccuracy)}   <-- the S3 gate`);
   console.log(`  name only              : ${String(summary.nameMatches)}/${String(summary.items)}`);
   console.log(`  price only             : ${String(summary.priceMatches)}/${String(summary.items)}`);
@@ -116,12 +137,24 @@ async function run(): Promise<void> {
   const passed = summary.nameAndPriceAccuracy >= ACCURACY_FLOOR;
   console.log(
     passed
-      ? `\nFloor met. No step-up needed at ${model.name}.`
-      : `\nFloor MISSED at ${model.name}. Re-run with --model=gpt-5; if that also misses, K2 fires (PLAN §9).`,
+      ? `\nFloor met. No step-up needed at ${model.modelId}.`
+      : `\nFloor MISSED at ${model.modelId}. Re-run with EXTRACTION_MODEL=gpt-5; if that also misses, K2 fires (PLAN §9).`,
   );
 
   if (out !== null) {
-    await writeFile(out, `${JSON.stringify({ model: model.name, summary, records }, null, 2)}\n`);
+    // Everything PLAN §7 is allowed to claim about this run, so the prose can be
+    // checked against the record rather than believed.
+    const record = {
+      model: model.modelId,
+      ranAt: startedAt.toISOString(),
+      elapsedSeconds,
+      accuracyFloor: ACCURACY_FLOOR,
+      floorMet: passed,
+      dataset: { merchant: dataset.merchant, items: dataset.items.length },
+      summary,
+      records,
+    };
+    await writeFile(resolve(out), `${JSON.stringify(record, null, 2)}\n`);
     console.log(`Wrote ${out}`);
   }
 }
