@@ -74,7 +74,7 @@ async function stockOf(deps: StorefrontDeps, variantId: string): Promise<number>
     .select({ stock: variants.stock })
     .from(variants)
     .where(eq(variants.id, variantId));
-  return row!.stock;
+  return row!.stock!;
 }
 
 describe('T9: oversell at fulfilment, automatic refund', () => {

@@ -526,7 +526,9 @@ async function fulfillPaidOrder(
       fulfilled.push({
         variantId: line.variantId,
         quantity: line.quantity,
-        remainingStock: hit.stock,
+        // The winning UPDATE's `stock >= qty` guard proves stock was a number
+        // (a null-stock Variant can never satisfy it), so the row is non-null.
+        remainingStock: hit.stock!,
       });
       continue;
     }
