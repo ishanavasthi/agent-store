@@ -23,6 +23,7 @@
     "db:migrate": "node --experimental-strip-types src/db/migrate.ts",
     "db:seed": "node --experimental-strip-types src/db/seed.ts",
     "spike:extraction": "npm run build && node dist/ingestion/spike/runExtractionSpike.js",
+    "evals:live": "npm run build:server && node dist/evals/live/cli.js",
     "db:migrate:prod": "node dist/db/migrate.js",
     "db:seed:prod": "node dist/db/seed.js"
   },
@@ -36,6 +37,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.3.246",
     "@electric-sql/pglite": "^0.5.7",
     "@types/express": "^5.0.6",
     "@types/node": "^22.15.3",
@@ -44,6 +46,7 @@
     "@types/ws": "^8.18.1",
     "@vitejs/plugin-react": "^6.1.0",
     "drizzle-kit": "^0.31.10",
+    "playwright": "^1.62.1",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "react-router-dom": "^7.18.2",
