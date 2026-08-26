@@ -1,0 +1,5 @@
+.claude/
+private/
+node_modules/
+dist/
+.env

@@ -95,7 +95,7 @@ async function main(): Promise<void> {
       .select({ stock: variants.stock })
       .from(variants)
       .where(eq(variants.id, 'var_test_tee_default'));
-    return row!.stock;
+    return row!.stock!;
   };
 
   try {

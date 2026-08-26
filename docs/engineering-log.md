@@ -8,6 +8,54 @@ Each entry is **Symptom → Cause → Fix → Lesson**. The Cause is the mechani
 
 ---
 
+## 2026-08-26 — T12 ingestion pipeline
+
+### `fetch` to api.openai.com died ENOTFOUND while `nslookup` resolved it fine
+
+**Symptom** — every live extraction call failed with
+`getaddrinfo ENOTFOUND api.openai.com`, from Node and from `curl` and `ping` alike — yet
+`nslookup api.openai.com` returned real addresses, and other hosts (github.com) resolved
+normally.
+
+**Cause** — the machine was on a network whose primary DNS server (a CGNAT hotspot resolver,
+first in `scutil --dns`) answers NXDOMAIN for this specific name — DNS-level filtering.
+`getaddrinfo` (which `fetch`, `curl` and `ping` all use) trusts the system resolver chain and
+stops at the first authoritative-looking no; `nslookup` speaks UDP straight to a nameserver
+and got the real answer. `dscacheutil -q host -a name api.openai.com` returning *nothing* was
+the confirming symptom: the system resolver path itself was the filter.
+
+**Fix** — for the accuracy/ingest runs only: a scratch `--import` shim that overrides
+`dns.lookup` to resolve through public resolvers (8.8.8.8 / 1.1.1.1) and falls back to the
+original lookup. Deliberately **not** committed to the repo — it is a property of one
+network, not of this project, and baking a resolver override into shipped code would be its
+own trap.
+
+**Lesson** — `nslookup` succeeding while `getaddrinfo` fails means the system resolver path
+is lying, not the network. Diagnose with `scutil --dns` + `dscacheutil` before blaming the
+API or the code.
+
+### A prompt fix for truncated names produced doubled names instead
+
+**Symptom** — on the first 28-item accuracy run the only field below 100% was name (23/28),
+every miss a truncation: `Nazar Snapback` for "NAZAR Snapback Cap", `Thela` for "THELA
+Canvas Tote". Adding a prompt rule "write the name followed by the full product type" fixed
+those five — and created four new misses of the opposite shape: `Dhundh Beanie Beanie`,
+`JALEBI Tie-Dye Tee T-Shirt`, `UDAAN Hoodie Sweatshirt`.
+
+**Cause** — the rule was stated unconditionally, so the model applied it to names that
+already end in the product type. An instruction tuned against the failing examples alone
+described the fix for them, not the invariant ("name plus type, stated exactly once").
+
+**Fix** — restate the rule with both directions and counter-examples ("expand `ZORA cargos`
+→ `ZORA Cargo Pants`; but `ROSHNI Hoodie` never becomes `ROSHNI Hoodie Sweatshirt`"), rerun
+the full 28 items: name 27/28, all other fields 100%. One care taken and worth keeping: the
+first version of the fix quoted actual dataset answers ("GALLI Cargo Pants", "Crossbody
+Sling Bag") as prompt examples — that is label text leaking into the extraction prompt, and
+it was scrubbed for invented brand names before the run that counts.
+
+**Lesson** — a prompt edit is a code change: rerun the whole eval after each one, expect the
+fix to overshoot, and never let ground-truth label text into the prompt — an eval the prompt
+quotes the answers to measures nothing.
 ## 2026-08-26 — T16 live-eval harness
 
 ### The hosted payment-link page cannot be scripted from documentation

@@ -1,5 +1,8 @@
 import { type Paise, paise } from '../../domain/money.js';
+import { namesMatch, pricesMatch, variantLabelsMatch } from '../matchers.js';
 import type { ProductExtraction } from '../types.js';
+
+export { namesMatch, normalizeName, pricesMatch, variantLabelsMatch } from '../matchers.js';
 
 /**
  * Scoring for spike S3 (PLAN §7): name + price exact-match against hand labels.
@@ -84,35 +87,6 @@ export interface SpikeSummary {
   readonly variantMatches: number;
   /** `nameAndPriceMatches / items`, the number K2 is decided on. */
   readonly nameAndPriceAccuracy: number;
-}
-
-/** Case, punctuation and spacing are transcription noise; word choice is not. */
-export function normalizeName(raw: string): string {
-  return raw
-    .toLowerCase()
-    .normalize('NFKD')
-    .replace(/[^\p{Letter}\p{Number}]+/gu, ' ')
-    .trim()
-    .replace(/\s+/g, ' ');
-}
-
-export function namesMatch(expected: string, actual: string | null): boolean {
-  return actual !== null && normalizeName(expected) === normalizeName(actual);
-}
-
-/** Integer paise equality. Nothing is rounded, nothing is within-tolerance. */
-export function pricesMatch(expected: Paise, actual: Paise | null): boolean {
-  return actual !== null && actual === expected;
-}
-
-/** Order-insensitive: `["M","L"]` and `["L","M"]` are the same set of sizes. */
-export function variantLabelsMatch(
-  expected: readonly string[],
-  actual: readonly string[] | null,
-): boolean {
-  if (actual === null || actual.length !== expected.length) return false;
-  const normalized = new Set(actual.map(normalizeName));
-  return expected.every((label) => normalized.has(normalizeName(label)));
 }
 
 export function scoreItem(id: string, label: SpikeLabel, extraction: ProductExtraction): ItemScore {
