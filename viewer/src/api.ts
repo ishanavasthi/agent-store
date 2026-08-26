@@ -31,7 +31,8 @@ export interface OrderStatusView {
   readonly paidAt: string | null;
 }
 
-export interface DirectoryOrder {
+/** Named as the server names it (src/domain/orders.ts) — one shape, one name. */
+export interface OrderDirectoryEntry {
   readonly orderId: string;
   readonly status: string;
   readonly total: MoneyView;
@@ -40,7 +41,7 @@ export interface DirectoryOrder {
 
 export interface AuditDirectory {
   readonly merchant: string;
-  readonly orders: readonly DirectoryOrder[];
+  readonly orders: readonly OrderDirectoryEntry[];
   readonly refusals: readonly AuditEvent[];
 }
 

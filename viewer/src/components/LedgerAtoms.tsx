@@ -23,6 +23,11 @@ export function Hash({ value }: { value: string }) {
   );
 }
 
+/** Booleans in untrusted payloads: render as words, or "—" when not stated. */
+export function YesNo({ value }: { value: unknown }) {
+  return <>{typeof value === 'boolean' ? (value ? 'yes' : 'no') : '—'}</>;
+}
+
 export function Timestamp({ iso }: { iso: string }) {
   const date = new Date(iso);
   const text = Number.isNaN(date.getTime())

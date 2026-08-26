@@ -2,7 +2,7 @@
 
 import { Link, useParams } from 'react-router-dom';
 import { fetchOrderAudit } from '../api';
-import { ErrorPanel, Hash, Loading, Money, StatusBadge, Timestamp } from '../components/Bits';
+import { ErrorPanel, Hash, Loading, Money, StatusBadge, Timestamp } from '../components/LedgerAtoms';
 import { Timeline } from '../components/Timeline';
 import { useLoad } from '../useLoad';
 

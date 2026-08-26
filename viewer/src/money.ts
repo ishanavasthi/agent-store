@@ -26,10 +26,11 @@ export function displayPaise(value: unknown): PaiseDisplay {
   if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) {
     return { paise: `${String(value)} paise`, rupees: null };
   }
-  const rupees = Math.trunc(value / 100);
-  const remainder = value % 100;
+  // CONTEXT.md bans floating point wherever money is computed, so ₹ comes from
+  // the decimal string alone: pad to three digits, split before the last two.
+  const digits = String(value).padStart(3, '0');
   return {
     paise: `${groupIndian(String(value))} paise`,
-    rupees: `₹${groupIndian(String(rupees))}.${String(remainder).padStart(2, '0')}`,
+    rupees: `₹${groupIndian(digits.slice(0, -2))}.${digits.slice(-2)}`,
   };
 }

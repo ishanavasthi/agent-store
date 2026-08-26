@@ -187,6 +187,19 @@ export interface AuditChainEntry extends AuditEventRecord {
 }
 
 /**
+ * One audit event as every `/audit*` HTTP response spells it: `occurredAt`
+ * ISO-serialised, `type` widened to string because wire consumers (the T7
+ * viewer) must render unknown future event types rather than reject them.
+ */
+export interface WireAuditEvent {
+  readonly seq: number;
+  readonly type: string;
+  readonly summary: string;
+  readonly occurredAt: string;
+  readonly payload: Record<string, unknown>;
+}
+
+/**
  * Put a set of audit rows into their canonical order and attach summaries.
  *
  * Ordering is by `seq` — the append-only table's monotonic sequence — and never

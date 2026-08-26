@@ -2,7 +2,7 @@
 
 import { Link } from 'react-router-dom';
 import { fetchDirectory } from '../api';
-import { ErrorPanel, Loading, Money, StatusBadge, Timestamp } from '../components/Bits';
+import { ErrorPanel, Loading, Money, StatusBadge, Timestamp } from '../components/LedgerAtoms';
 import { useLoad } from '../useLoad';
 
 export function DirectoryPage() {

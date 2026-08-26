@@ -7,15 +7,15 @@
 
 import type { AuditEvent } from '../api';
 import { explainEvent } from '../explainEvent';
-import { Hash, Money, Timestamp } from './Bits';
+import { Hash, Money, Timestamp, YesNo } from './LedgerAtoms';
 
 function FactValue({ name, value }: { name: string; value: unknown }) {
   if (name.endsWith('Paise')) return <Money paise={value} />;
-  if (typeof value === 'string' && (name.endsWith('Hash') || name === 'priceHash')) {
+  if (typeof value === 'string' && name.endsWith('Hash')) {
     return <Hash value={value} />;
   }
   if (value === null) return <span className="fact-null">—</span>;
-  if (typeof value === 'boolean') return <>{value ? 'yes' : 'no'}</>;
+  if (typeof value === 'boolean') return <YesNo value={value} />;
   if (typeof value === 'string' || typeof value === 'number') return <>{String(value)}</>;
   return <>{JSON.stringify(value)}</>;
 }

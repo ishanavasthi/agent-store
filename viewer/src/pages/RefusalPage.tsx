@@ -6,7 +6,7 @@
 
 import { Link, useParams } from 'react-router-dom';
 import { fetchRefusalAudit } from '../api';
-import { ErrorPanel, Loading, Timestamp } from '../components/Bits';
+import { ErrorPanel, Loading, Timestamp, YesNo } from '../components/LedgerAtoms';
 import { Timeline } from '../components/Timeline';
 import { useLoad } from '../useLoad';
 
@@ -38,7 +38,9 @@ export function RefusalPage() {
           </div>
           <div>
             <dt>recoverable</dt>
-            <dd>{typeof recoverable === 'boolean' ? (recoverable ? 'yes' : 'no') : '—'}</dd>
+            <dd>
+              <YesNo value={recoverable} />
+            </dd>
           </div>
           <div>
             <dt>refused at</dt>

@@ -4,7 +4,11 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import express, { type Express, type NextFunction, type Request, type Response } from 'express';
 import { MERCHANT_NAME } from '../config.js';
 import type { StorefrontDeps } from '../deps.js';
-import { missingHappyPathSteps, type AuditChainEntry } from '../domain/auditEvents.js';
+import {
+  missingHappyPathSteps,
+  type AuditChainEntry,
+  type WireAuditEvent,
+} from '../domain/auditEvents.js';
 import {
   listRecentRefusals,
   readPurchaseAuditChain,
@@ -22,8 +26,7 @@ import { createMcpServer } from '../mcp/server.js';
 /** Each `GET /audit` directory list is capped here; the log itself is unbounded. */
 const AUDIT_DIRECTORY_LIMIT = 50;
 
-/** One audit event as every `/audit*` response spells it. */
-function toWireEvent(event: AuditChainEntry): Record<string, unknown> {
+function toWireEvent(event: AuditChainEntry): WireAuditEvent {
   return {
     seq: event.seq,
     type: event.type,
