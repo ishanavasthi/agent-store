@@ -21,6 +21,7 @@ import {
   type CartItem,
   type CartMandatePayload,
   type IntentMandatePayload,
+  type MandatePayload,
 } from './mandates.js';
 import { moneyView, paise, type MoneyView, type Paise } from './money.js';
 import { Refusal, ValidationError } from './refusal.js';
@@ -116,6 +117,74 @@ export function resolveSigningMode(
 }
 
 /**
+ * `resolveSigningMode`'s sibling for the third signature (ADR-0004): the
+ * deferred agent-side Cart signature riding on `submit_payment`. Required from
+ * a client-custody Agent (`create_cart` stored NULL for it); a contradiction
+ * from a custodial one (its Cart was signed at `create_cart`) — the same
+ * both-directions `CUSTODY_MISMATCH` rule, worded here and nowhere else.
+ */
+export function resolveCartSignature(
+  signing: SigningMode,
+  supplied: string | undefined,
+): string | null {
+  if (signing.custody === 'client') {
+    if (supplied === undefined) {
+      throw new ValidationError(
+        'CUSTODY_MISMATCH',
+        'submit_payment: this Agent holds its key client-side — supply cartSignature, your ' +
+          'signature over the exact Cart mandate payload create_cart returned.',
+      );
+    }
+    return supplied;
+  }
+  if (supplied !== undefined) {
+    throw new ValidationError(
+      'CUSTODY_MISMATCH',
+      'submit_payment: this Agent is custodial — its Cart mandate was signed at create_cart; ' +
+        'omit cartSignature.',
+    );
+  }
+  return null;
+}
+
+/**
+ * `createdAt` under the resolved SigningMode: a client-custody Agent minted it
+ * as part of the bytes it signed; custodially the server mints it now. Either
+ * way it is part of the signed bytes — two identical payloads at different
+ * moments are two distinct mandates.
+ */
+export function mandateCreatedAt(signing: SigningMode): string {
+  return signing.custody === 'client' ? signing.createdAt : new Date().toISOString();
+}
+
+/**
+ * The agent-side signature for a payload composed under this SigningMode:
+ * custodially the server signs it now; a client-custody Agent already signed
+ * it, so its supplied signature is adopted as-is — to be judged by
+ * `agentSignatureVerifies` before anything is stored.
+ */
+export function signOrAdopt(signing: SigningMode, payload: MandatePayload): string {
+  return signing.custody === 'custodial'
+    ? signMandate(signing.privateKey, payload)
+    : signing.signature;
+}
+
+/**
+ * The custody-aware check on a signature from `signOrAdopt`: a client-adopted
+ * signature must verify against the Agent's registered public key; a custodial
+ * one was computed by the server over this same payload a moment ago, so there
+ * is nothing to re-check.
+ */
+export function agentSignatureVerifies(
+  signing: SigningMode,
+  publicKey: string,
+  payload: MandatePayload,
+  signature: string,
+): boolean {
+  return signing.custody === 'custodial' || verifyMandateSignature(publicKey, payload, signature);
+}
+
+/**
  * A locally signed mandate whose signature does not verify is the trust layer's
  * no — policy, before money moves, so a Refusal (`INVALID_MANDATE`), audited
  * first as `mandate.refused` in its own transaction (the `agent.refused`
@@ -183,21 +252,19 @@ export async function declareIntent(
     signature: input.signature,
   });
 
+  // Client custody: the client minted `createdAt`, and the server recomposes
+  // the payload from the same fields — so what is verified and stored is
+  // byte-for-byte what the client claims to have signed.
   const payload: IntentMandatePayload = {
     agentId: agent.id,
     merchantId: agent.merchantId,
     want,
     budgetPaise: budget,
-    // Part of the signed bytes: two identical wants are two distinct Intents.
-    // Client custody: the client minted it, and the server recomposes the
-    // payload from the same fields — so what is verified and stored is
-    // byte-for-byte what the client claims to have signed.
-    createdAt: signing.custody === 'client' ? signing.createdAt : new Date().toISOString(),
+    createdAt: mandateCreatedAt(signing),
   };
   const intentHash = hashMandate(payload);
-  const signature =
-    signing.custody === 'custodial' ? signMandate(signing.privateKey, payload) : signing.signature;
-  if (signing.custody === 'client' && !verifyMandateSignature(agent.publicKey, payload, signature)) {
+  const signature = signOrAdopt(signing, payload);
+  if (!agentSignatureVerifies(signing, agent.publicKey, payload, signature)) {
     await refuseUnverifiedMandate(
       db,
       agent,

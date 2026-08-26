@@ -151,14 +151,13 @@ export function createMcpServer(deps: StorefrontDeps): McpServer {
       return textResult({
         ...registration,
         note:
-          registration.custody === 'client'
-            ? 'Keep agentToken for every subsequent call. The server stored only your public ' +
-              'key: sign each mandate payload locally (Ed25519 over its canonical JSON) and ' +
-              'pass the signatures to declare_intent and submit_payment. To change the Cap, ' +
-              'register again: that mints a new Agent with the new Cap.'
-            : 'Keep agentToken for every subsequent call. Your private key stays in merchant ' +
-              'custody and is never returned. To change the Cap, register again: that mints ' +
-              'a new Agent with the new Cap.',
+          'Keep agentToken for every subsequent call. ' +
+          (registration.custody === 'client'
+            ? 'The server stored only your public key: sign each mandate payload locally ' +
+              '(Ed25519 over its canonical JSON) and pass the signatures to declare_intent ' +
+              'and submit_payment. '
+            : 'Your private key stays in merchant custody and is never returned. ') +
+          'To change the Cap, register again: that mints a new Agent with the new Cap.',
       });
     }),
   );
@@ -269,15 +268,15 @@ export function createMcpServer(deps: StorefrontDeps): McpServer {
         total: result.total,
         items: result.items,
         nextStep:
-          result.agentSignature === null
+          (result.agentSignature === null
             ? 'Sign the canonical JSON of this exact payload with your local key, then call ' +
               'submit_payment with this cartHash, that signature as cartSignature, a locally ' +
               'signed Payment mandate (paymentCreatedAt + paymentSignature), and a fresh UUID ' +
-              'you mint as idempotencyKey. If prices change before then, submit_payment ' +
-              'refuses PRICE_CHANGED and you simply create_cart again.'
+              'you mint as idempotencyKey.'
             : 'Call submit_payment with this cartHash and a fresh UUID you mint as ' +
-              'idempotencyKey. If prices change before then, submit_payment refuses ' +
-              'PRICE_CHANGED and you simply create_cart again.',
+              'idempotencyKey.') +
+          ' If prices change before then, submit_payment refuses PRICE_CHANGED and you ' +
+          'simply create_cart again.',
       });
     }),
   );

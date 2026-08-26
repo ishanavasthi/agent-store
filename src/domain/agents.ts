@@ -63,7 +63,12 @@ export function capPaiseFromInput(value: number): Paise {
 /** Which side holds the Agent's private key (ADR-0004). */
 export type AgentCustody = 'custodial' | 'client';
 
-/** `private_key IS NULL` ⇔ client custody — the column is the whole model. */
+/**
+ * `private_key IS NULL` ⇔ client custody — the column is the whole model.
+ * For classifying into the custody vocabulary; signing sites branch on
+ * `privateKey === null` directly, because the null check is what narrows the
+ * key's type where the key itself is about to be used.
+ */
 export function agentCustody(agent: Pick<AgentRow, 'privateKey'>): AgentCustody {
   return agent.privateKey === null ? 'client' : 'custodial';
 }
@@ -130,7 +135,7 @@ export async function registerAgent(
     clientPublicKey === null
       ? generateSigningKeypair()
       : { publicKey: clientPublicKey, privateKey: null };
-  const custody: AgentCustody = keyMaterial.privateKey === null ? 'client' : 'custodial';
+  const custody = agentCustody(keyMaterial);
 
   // ADR-0003: the Agent row and its `agent.registered` event commit together.
   // The payload carries no secret — the public key, never the token or the

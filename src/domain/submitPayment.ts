@@ -21,20 +21,23 @@ import {
   parseCartMandatePayload,
   parseIntentMandatePayload,
   parsePaymentMandatePayload,
-  signMandate,
   verifyMandateChain,
   verifyMandateSignature,
   type CartItem,
   type PaymentMandatePayload,
 } from './mandates.js';
 import {
+  agentSignatureVerifies,
+  mandateCreatedAt,
   requireCartMandate,
   requireMerchantSigningKey,
+  resolveCartSignature,
   resolveSigningMode,
+  signOrAdopt,
   type CartLineView,
 } from './mandateFlow.js';
 import { moneyView, paise, type MoneyView } from './money.js';
-import { Refusal, ValidationError, type RefusalPayload } from './refusal.js';
+import { Refusal, type RefusalPayload } from './refusal.js';
 
 /**
  * `submit_payment` — the money path, and the only one (DECISIONS.md 2026-08-26
@@ -112,35 +115,16 @@ export async function submitPayment(
     createdAt: request.paymentCreatedAt,
     signature: request.paymentSignature,
   });
-  let clientCartSignature: string | null = null;
-  if (signing.custody === 'client') {
-    if (request.cartSignature === undefined) {
-      throw new ValidationError(
-        'CUSTODY_MISMATCH',
-        'submit_payment: this Agent holds its key client-side — supply cartSignature, your ' +
-          'signature over the exact Cart mandate payload create_cart returned.',
-      );
-    }
-    clientCartSignature = request.cartSignature;
-  } else if (request.cartSignature !== undefined) {
-    throw new ValidationError(
-      'CUSTODY_MISMATCH',
-      'submit_payment: this Agent is custodial — its Cart mandate was signed at create_cart; ' +
-        'omit cartSignature.',
-    );
-  }
+  const clientCartSignature = resolveCartSignature(signing, request.cartSignature);
   const paymentPayload: PaymentMandatePayload = {
     agentId: agent.id,
     merchantId,
     cartHash: cartRow.hash,
     idempotencyKey: request.idempotencyKey,
-    createdAt: signing.custody === 'client' ? signing.createdAt : new Date().toISOString(),
+    createdAt: mandateCreatedAt(signing),
   };
   const paymentHash = hashMandate(paymentPayload);
-  const paymentSignature =
-    signing.custody === 'custodial'
-      ? signMandate(signing.privateKey, paymentPayload)
-      : signing.signature;
+  const paymentSignature = signOrAdopt(signing, paymentPayload);
 
   // --- 3. Trust gate --------------------------------------------------------
   // A Refusal from anywhere in this gate means zero rows persisted and the
@@ -232,8 +216,7 @@ export async function submitPayment(
     verifyMandateSignature(agent.publicKey, intent, intentRow.agentSignature) &&
     verifyMandateSignature(agent.publicKey, cart, agentCartSignature) &&
     verifyMandateSignature(merchantKey.publicKey, cart, cartRow.merchantSignature) &&
-    (signing.custody === 'custodial' ||
-      verifyMandateSignature(agent.publicKey, paymentPayload, paymentSignature));
+    agentSignatureVerifies(signing, agent.publicKey, paymentPayload, paymentSignature);
   const chain = verifyMandateChain(intent, cart, paymentPayload);
   if (!signaturesValid || !chain.ok) {
     return refuse({
