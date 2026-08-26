@@ -1,0 +1,398 @@
+{
+  "$comment": "Hand-labeled ground truth for the demo catalog (T11, PLAN §5.3). See README.md in this directory for the labeling rules, the trap inventory, and an honest note on authorship. Labels are the answer a careful human gives reading the caption and photo together; they are not model output.",
+  "merchant": "Kalaakar Streetwear",
+  "items": [
+    {
+      "id": "01-raat-oversized-tee",
+      "image": "images/01-raat-oversized-tee.jpg",
+      "caption": "RAAT 🌙 drop is LIVE.\noversized tee, 240 gsm french terry, jet black, puff print\nS M L XL XXL — sab hai\n₹1,199/- 🖤 COD available\nlink in bio, jaldi karo warna reh jaoge 😴",
+      "label": {
+        "name": "RAAT Oversized Tee",
+        "pricePaise": 119900,
+        "stock": null,
+        "variantLabels": ["S", "M", "L", "XL", "XXL"],
+        "variantStock": {},
+        "description": "Jet black oversized tee in 240 GSM french terry with a puff print. COD available."
+      },
+      "tests": "Near-baseline, but no stock anywhere — 'jaldi karo' urgency must not become a number. The 240 (GSM) is a non-price number sitting near the price."
+    },
+    {
+      "id": "02-bombay-95-graphic-tee",
+      "image": "images/02-bombay-95-graphic-tee.jpg",
+      "caption": "back to where it started 🌊🌆\nBombay 95 Graphic Tee — 100% combed cotton, screen print, regular fit\nsizes: M / L / XL\nRs. 899 only, shipping free 🚚\n18 pieces in this run. once gone = gone.",
+      "label": {
+        "name": "Bombay 95 Graphic Tee",
+        "pricePaise": 89900,
+        "stock": 18,
+        "variantLabels": ["M", "L", "XL"],
+        "variantStock": {},
+        "description": "Regular-fit graphic tee in 100% combed cotton with a screen-printed Bombay 95 artwork. Free shipping."
+      },
+      "tests": "Baseline with a twist: '95' is part of the product name, not a price or a count, and stock (18) sits in prose, not after a 'stock:' marker."
+    },
+    {
+      "id": "03-aandhi-windcheater",
+      "image": "images/03-aandhi-windcheater.jpg",
+      "caption": "AANDHI windcheater 🌪️💨 monsoon essential\nwater-repellent nylon, packable hood, reflective zip\nM | L | XL\nMRP ₹2,499 ❌ drop price 1,799/- ✅\nlimited pieces, DM to book 📩",
+      "label": {
+        "name": "AANDHI Windcheater",
+        "pricePaise": 179900,
+        "stock": null,
+        "variantLabels": ["M", "L", "XL"],
+        "variantStock": {},
+        "description": "Water-repellent nylon windcheater with a packable hood and reflective zip."
+      },
+      "tests": "MRP-vs-sale trap: the buyable price is the bare '1,799/-', which carries no currency symbol, while the wrong answer (₹2,499) is the one written with ₹. 'limited pieces' is vibes, not stock."
+    },
+    {
+      "id": "04-galli-cargo-pants",
+      "image": "images/04-galli-cargo-pants.jpg",
+      "caption": "GALLI cargos 🧵 street uniform\n8 pockets. ripstop. adjustable ankle cuffs.\nwaist: 28 / 30 / 32 / 34 / 36\nRs 1,899 flat, all sizes\n⚠️ 32 mein sirf 3 pieces bache, baaki sizes full stock\nDM 'GALLI' to order",
+      "label": {
+        "name": "GALLI Cargo Pants",
+        "pricePaise": 189900,
+        "stock": null,
+        "variantLabels": ["28", "30", "32", "34", "36"],
+        "variantStock": { "32": 3 },
+        "description": "Ripstop cargo pants with 8 pockets and adjustable ankle cuffs, in waist sizes 28–36."
+      },
+      "tests": "Per-variant stock: only waist 32 has a stated count (3); 'baaki sizes full stock' is vibes and no total is stated, so product-level stock is null. '8 pockets' is a number that is neither price nor stock."
+    },
+    {
+      "id": "05-safed-classic-tee",
+      "image": "images/05-safed-classic-tee.jpg",
+      "caption": "kabhi kabhi bas ek safed tee chahiye hoti hai 🤍\nSAFED classic tee. 220 gsm. no print, no logo, no drama.\nS / M / L / XL\nsirf 699.\nthat's it. that's the post.",
+      "label": {
+        "name": "SAFED Classic Tee",
+        "pricePaise": 69900,
+        "stock": null,
+        "variantLabels": ["S", "M", "L", "XL"],
+        "variantStock": {},
+        "description": "Plain white classic tee in 220 GSM cotton — no print, no logo."
+      },
+      "tests": "Broken price format: 'sirf 699.' — no currency symbol, no /- suffix, trailing full stop. No stock stated."
+    },
+    {
+      "id": "06-nazar-snapback-cap",
+      "image": "images/06-nazar-snapback-cap.jpg",
+      "caption": "NAZAR 🧿 snapback\nblack twill, embroidered eye, flat brim, adjustable — free size\n@ ₹549/-\n25 pcs ready hai, aaj hi le lo 🧢",
+      "label": {
+        "name": "NAZAR Snapback Cap",
+        "pricePaise": 54900,
+        "stock": 25,
+        "variantLabels": [],
+        "variantStock": {},
+        "description": "Black twill snapback with an embroidered evil-eye motif, flat brim and adjustable free-size fit."
+      },
+      "tests": "'free size' / 'adjustable' is the absence of a choice — the correct answer is no variants (one implicit default Variant), with stock 25 at product level. Price is written with a leading '@'."
+    },
+    {
+      "id": "07-udaan-hoodie",
+      "image": "images/07-udaan-hoodie.jpg",
+      "caption": "UDAAN hoodie 🕊️ — winter ki taiyari abhi se\n400 gsm, brushed fleece inside, embroidered chest logo\nsizes M to XXL (M/L/XL/XXL)\n₹2,199/- only\n9 left in first batch ✈️",
+      "label": {
+        "name": "UDAAN Hoodie",
+        "pricePaise": 219900,
+        "stock": 9,
+        "variantLabels": ["M", "L", "XL", "XXL"],
+        "variantStock": {},
+        "description": "Heavyweight 400 GSM hoodie with brushed fleece lining and an embroidered chest logo."
+      },
+      "tests": "Sizes stated twice ('M to XXL' as a range, then enumerated) — the label is the enumerated list, once, not both readings."
+    },
+    {
+      "id": "08-kohra-acid-wash-hoodie",
+      "image": "images/08-kohra-acid-wash-hoodie.jpg",
+      "caption": "KOHRA 🌫️ acid wash hoodie\nhar piece ka wash alag — no two same\nS | M | L\nMRP: ₹3,499\nlaunch pe sirf ₹2,399 🤯\nkal tak ka price hai bas. uske baad wapas full.",
+      "label": {
+        "name": "KOHRA Acid Wash Hoodie",
+        "pricePaise": 239900,
+        "stock": null,
+        "variantLabels": ["S", "M", "L"],
+        "variantStock": {},
+        "description": "Acid wash hoodie with a unique wash pattern on every piece."
+      },
+      "tests": "MRP-vs-launch-price trap on separate lines; the buyable price is ₹2,399. No stock stated at all."
+    },
+    {
+      "id": "09-patang-crop-tee",
+      "image": "images/09-patang-crop-tee.jpg",
+      "caption": "PATANG crop tee 🪁\n3 colours – lilac / mint / white 🎨\ncotton lycra, boxy crop, drop shoulder\nRs.799 each\njo colour chahiye woh comment karo 👇",
+      "label": {
+        "name": "PATANG Crop Tee",
+        "pricePaise": 79900,
+        "stock": null,
+        "variantLabels": ["lilac", "mint", "white"],
+        "variantStock": {},
+        "description": "Boxy cropped tee in cotton lycra with a drop shoulder, in lilac, mint and white."
+      },
+      "tests": "Colour variants instead of sizes: '3 colours' — the 3 is a count of choices, not stock or price. Price written as 'Rs.799' with no space. No stock stated."
+    },
+    {
+      "id": "10-thela-tote-bag",
+      "image": "images/10-thela-tote-bag.jpg",
+      "caption": "THELA 🛍️ — sabzi se lekar laptop tak\nheavy 14oz canvas tote, zip top, inner phone pocket\n₹449/-\nfirst batch: 50 pcs\nhar order ke saath 1 free sticker 🌶️",
+      "label": {
+        "name": "THELA Canvas Tote",
+        "pricePaise": 44900,
+        "stock": 50,
+        "variantLabels": [],
+        "variantStock": {},
+        "description": "Heavy 14 oz canvas tote with a zip top and inner phone pocket."
+      },
+      "tests": "No variants stated → one implicit default Variant. Three non-answer numbers around the real ones: 14 (oz), 1 (free sticker), and the sticker line must not turn into stock or a second item."
+    },
+    {
+      "id": "11-akkad-joggers",
+      "image": "images/11-akkad-joggers.jpg",
+      "caption": "AKKAD joggers — ghar se gym se ghar 🔁\nfrench terry, tapered fit, zip pockets\nS M L XL\n1,299/- only\nselling faster than we can restock fr 💨",
+      "label": {
+        "name": "AKKAD Joggers",
+        "pricePaise": 129900,
+        "stock": null,
+        "variantLabels": ["S", "M", "L", "XL"],
+        "variantStock": {},
+        "description": "Tapered french terry joggers with zip pockets."
+      },
+      "tests": "Bare price format '1,299/- only' with no currency marker. 'selling faster than we can restock' is urgency, not a stock count → null."
+    },
+    {
+      "id": "12-bijli-varsity-jacket",
+      "image": "images/12-bijli-varsity-jacket.jpg",
+      "caption": "BIJLI ⚡ varsity jacket. iconic.\nwool blend body, PU sleeves, chenille patch\nM / L only\n₹3,799\n6 pieces. that's the whole drop.\n(COD available sirf ₹2000 tak ke orders pe — iske liye prepaid 🙏)",
+      "label": {
+        "name": "BIJLI Varsity Jacket",
+        "pricePaise": 379900,
+        "stock": 6,
+        "variantLabels": ["M", "L"],
+        "variantStock": {},
+        "description": "Varsity jacket with a wool blend body, PU sleeves and a chenille patch. Prepaid orders only."
+      },
+      "tests": "₹2000 is a COD eligibility threshold, not a price; picking it would undercharge by ₹1,799. Price ₹3,799 is written with no /- and no 'only'."
+    },
+    {
+      "id": "13-chai-biscuit-socks",
+      "image": "images/13-chai-biscuit-socks.jpg",
+      "caption": "CHAI-BISCUIT socks 🍪☕ (yes we went there)\npack of 3 — chai brown, biscuit beige, doodh white\ncombed cotton, free size, ribbed cuff\n₹299 for the pack\ninko dekh ke hi warm feel hota hai 🧦",
+      "label": {
+        "name": "CHAI-BISCUIT Socks",
+        "pricePaise": 29900,
+        "stock": null,
+        "variantLabels": [],
+        "variantStock": {},
+        "description": "Pack of 3 combed cotton crew socks in chai brown, biscuit beige and milk white. Free size."
+      },
+      "tests": "The three colours are the contents of the pack, not choices — you buy all three, so the correct answer is no variants. 'pack of 3' is neither stock nor a variant count. No stock stated."
+    },
+    {
+      "id": "14-jugaad-utility-vest",
+      "image": "images/14-jugaad-utility-vest.jpg",
+      "caption": "JUGAAD utility vest 🔧\n6 pocket, mesh lining, D-rings — cargo pants ka best friend\nM | L\nRs. 1,599/-\nstyling reel coming soon 🎬",
+      "label": {
+        "name": "JUGAAD Utility Vest",
+        "pricePaise": 159900,
+        "stock": null,
+        "variantLabels": ["M", "L"],
+        "variantStock": {},
+        "description": "Six-pocket utility vest with mesh lining and D-rings."
+      },
+      "tests": "Quiet caption: no stock, short size list, one clean price. Tests that the extractor does not invent fields when a caption simply says less."
+    },
+    {
+      "id": "15-monsoon-check-shacket",
+      "image": "images/15-monsoon-check-shacket.jpg",
+      "caption": "MONSOON check shacket 🌧️🤎\nbrushed flannel, oversized, button front — shirt + jacket = shacket\nM / L / XL / XXL\n~~MRP 2,899/-~~ ab sirf 1,999\n11 pcs bache. baarish aane se pehle le lo ☔",
+      "label": {
+        "name": "MONSOON Check Shacket",
+        "pricePaise": 199900,
+        "stock": 11,
+        "variantLabels": ["M", "L", "XL", "XXL"],
+        "variantStock": {},
+        "description": "Oversized brushed flannel shacket with a button front, in a check pattern."
+      },
+      "tests": "MRP struck through with ~~tildes~~ (Instagram-style fake strikethrough); the buyable price is the bare '1,999' with no currency symbol at all."
+    },
+    {
+      "id": "16-sadak-slides",
+      "image": "images/16-sadak-slides.jpg",
+      "caption": "SADAK slides 🩴 padded straps, cloud feel\nUK 7 / 8 / 9 / 10\n₹699 only\nUK 10 almost gone btw 👀",
+      "label": {
+        "name": "SADAK Slides",
+        "pricePaise": 69900,
+        "stock": null,
+        "variantLabels": ["UK 7", "UK 8", "UK 9", "UK 10"],
+        "variantStock": {},
+        "description": "Padded-strap slides in UK sizes 7–10."
+      },
+      "tests": "'UK 10 almost gone' is per-variant vibes, not a per-variant count — variantStock stays empty and product stock stays null. Size labels carry a 'UK' prefix."
+    },
+    {
+      "id": "17-hawa-low-top-sneakers",
+      "image": "images/17-hawa-low-top-sneakers.jpg",
+      "caption": "HAWA low tops 👟🌬️\nwhite/gum sole, vegan leather, cushioned insole\nUK 6 7 8 9 10\n₹3,499/-\nfree shipping above ₹1,499 (toh in pe obviously free 😌)",
+      "label": {
+        "name": "HAWA Low Top Sneakers",
+        "pricePaise": 349900,
+        "stock": null,
+        "variantLabels": ["UK 6", "UK 7", "UK 8", "UK 9", "UK 10"],
+        "variantStock": {},
+        "description": "White vegan leather low-top sneakers with a gum sole and cushioned insole."
+      },
+      "tests": "Free-shipping threshold (₹1,499) is a second ₹-marked number that is not a price — same trap family as the spike's bucket hat, at a bigger price gap. Sizes are space-separated with no slashes."
+    },
+    {
+      "id": "18-dhundh-beanie",
+      "image": "images/18-dhundh-beanie.jpg",
+      "caption": "DHUNDH beanie 🌫️ ribbed knit, fold cuff\n2 colours: black / grey\nRs 499\n30 pcs total dono colour mila ke\nsar garam, dil naram ❄️",
+      "label": {
+        "name": "DHUNDH Beanie",
+        "pricePaise": 49900,
+        "stock": 30,
+        "variantLabels": ["black", "grey"],
+        "variantStock": {},
+        "description": "Ribbed knit beanie with a fold cuff, in black and grey."
+      },
+      "tests": "A stated total across colour variants: 30 is product-level stock ('dono colour mila ke'), with no per-variant split — variantStock stays empty even though variants exist."
+    },
+    {
+      "id": "19-crossbody-sling-bag",
+      "image": "images/19-crossbody-sling-bag.jpg",
+      "caption": "roz ka carry, sorted ✔️\nwater resistant, 3 zip compartments, fits an 11 inch tablet, adjustable strap\nsirf 899\n14 pieces ready to ship 🚚\nDM for order",
+      "label": {
+        "name": "Crossbody Sling Bag",
+        "pricePaise": 89900,
+        "stock": 14,
+        "variantLabels": [],
+        "variantStock": {},
+        "description": "Water-resistant crossbody sling bag with 3 zip compartments, sized to fit an 11-inch tablet."
+      },
+      "tests": "The caption never says what the product is — the name has to come from the photo (same trap as the spike's bucket hat). Broken price format 'sirf 899', plus two spec numbers (3 compartments, 11 inch) that are neither price nor stock."
+    },
+    {
+      "id": "20-antenna-graphic-hoodie",
+      "image": "images/20-antenna-graphic-hoodie.jpg",
+      "caption": "ANTENNA 📡 graphic hoodie\nsignal strong 🗼 back print, 380 gsm, drop shoulder\nS / M / L / XL\n40% OFF — ab ₹1,499 (pehle ₹2,499)\nsale kab tak? pata nahi. risk mat lo 😤",
+      "label": {
+        "name": "ANTENNA Graphic Hoodie",
+        "pricePaise": 149900,
+        "stock": null,
+        "variantLabels": ["S", "M", "L", "XL"],
+        "variantStock": {},
+        "description": "380 GSM drop-shoulder hoodie with an antenna-tower back print."
+      },
+      "tests": "Percentage-discount trap: three numbers in the price line (40, 1,499, 2,499) and only the middle one is what a buyer pays. No stock stated."
+    },
+    {
+      "id": "21-khoya-denim-jacket",
+      "image": "images/21-khoya-denim-jacket.jpg",
+      "caption": "KHOYA denim jacket 🧵 12oz washed indigo\noversized fit, antique brass buttons\nS / M / L / XL\nRs. 2,799/-\n8 pieces only\npair karo RAAT tee (₹1,199) ke saath = poora fit 🔥",
+      "label": {
+        "name": "KHOYA Denim Jacket",
+        "pricePaise": 279900,
+        "stock": 8,
+        "variantLabels": ["S", "M", "L", "XL"],
+        "variantStock": {},
+        "description": "Oversized washed indigo denim jacket in 12 oz denim with antique brass buttons."
+      },
+      "tests": "Cross-sell trap: another product's price (the RAAT tee at ₹1,199) appears in the same caption. The jacket's price is Rs. 2,799, and the tee mention must not become a second product or overwrite the price."
+    },
+    {
+      "id": "22-firangi-track-pants",
+      "image": "images/22-firangi-track-pants.jpg",
+      "caption": "FIRANGI track pants 🏁 side stripe supremacy\npoly-cotton, ankle zip, contrast stripe\nS M L XL XXL\n1,599 flat\nrestocked ✅ pichli baar 2 din mein khatam ho gaye the",
+      "label": {
+        "name": "FIRANGI Track Pants",
+        "pricePaise": 159900,
+        "stock": null,
+        "variantLabels": ["S", "M", "L", "XL", "XXL"],
+        "variantStock": {},
+        "description": "Poly-cotton track pants with a contrast side stripe and ankle zips."
+      },
+      "tests": "'restocked ✅' is the spike's 'stock ready ✅' trap restated — vibes, not a count. The '2' in '2 din mein khatam' is a duration, not stock. Price is '1,599 flat' with no currency marker."
+    },
+    {
+      "id": "23-machli-mesh-shorts",
+      "image": "images/23-machli-mesh-shorts.jpg",
+      "caption": "MACHLI mesh shorts 🐟 double layer, quick dry\ngym / beach / ghar — sab jagah chalega\nS: 4 pcs | M: 7 pcs | L: 2 pcs\n₹899/-\njiska size gaya, woh gaya 🫡",
+      "label": {
+        "name": "MACHLI Mesh Shorts",
+        "pricePaise": 89900,
+        "stock": null,
+        "variantLabels": ["S", "M", "L"],
+        "variantStock": { "S": 4, "M": 7, "L": 2 },
+        "description": "Double-layer quick-dry mesh shorts."
+      },
+      "tests": "Full per-variant stock split with no stated total. Per the labeling rules, counts stay at the Variant level and product stock is null — summing to 13 would be an inference the caption never states. 'gym / beach / ghar' must not be read as variants."
+    },
+    {
+      "id": "24-jalebi-tie-dye-tee",
+      "image": "images/24-jalebi-tie-dye-tee.jpg",
+      "caption": "JALEBI tie-dye tee 🍥 har piece one of one\nhand dyed in Jaipur, 200 gsm\nM / L / XL\nRs.999\nwash care: thanda paani, 30°C max, andar bahar karke 🙃",
+      "label": {
+        "name": "JALEBI Tie-Dye Tee",
+        "pricePaise": 99900,
+        "stock": null,
+        "variantLabels": ["M", "L", "XL"],
+        "variantStock": {},
+        "description": "Hand-dyed tie-dye tee in 200 GSM cotton, dyed in Jaipur — every piece unique."
+      },
+      "tests": "A wash-care temperature (30°C) as a stray number, and 'har piece one of one' must not be read as stock 1. Price 'Rs.999' with no space, no /-."
+    },
+    {
+      "id": "25-raakh-cargo-shorts",
+      "image": "images/25-raakh-cargo-shorts.jpg",
+      "caption": "RAAKH cargo shorts 🩶 knee-length, 6 pockets\nwashed grey cotton twill\nwaist 30 / 32 / 34\n₹1,099/- (COD pe 50 extra lagega)\n16 pcs in stock, size jaldi batao",
+      "label": {
+        "name": "RAAKH Cargo Shorts",
+        "pricePaise": 109900,
+        "stock": 16,
+        "variantLabels": ["30", "32", "34"],
+        "variantStock": {},
+        "description": "Knee-length cargo shorts in washed grey cotton twill with 6 pockets."
+      },
+      "tests": "A COD surcharge (50 extra) sits inside the price parentheses; the listed price is ₹1,099 — the surcharge is a payment-method fee, not part of the price."
+    },
+    {
+      "id": "26-parinda-puffer-vest",
+      "image": "images/26-parinda-puffer-vest.jpg",
+      "caption": "PARINDA puffer vest 🐦‍⬛ lightweight, warm af\nquilted, high neck, zip pockets\nM / L / XL\nMRP: ₹3,299\naaj ke liye: 2,499/-\n5 bache. bas.",
+      "label": {
+        "name": "PARINDA Puffer Vest",
+        "pricePaise": 249900,
+        "stock": 5,
+        "variantLabels": ["M", "L", "XL"],
+        "variantStock": {},
+        "description": "Lightweight quilted puffer vest with a high neck and zip pockets."
+      },
+      "tests": "MRP-vs-today's-price trap where the labels are 'MRP:' and 'aaj ke liye:' — the buyable price is 2,499, written bare with a /-. Stock stated tersely in Hindi ('5 bache')."
+    },
+    {
+      "id": "27-taxi-camp-collar-shirt",
+      "image": "images/27-taxi-camp-collar-shirt.jpg",
+      "caption": "TAXI 🚕 camp collar shirt\nkaali-peeli inspired print, viscose, cuban collar\nM / L / XL\nRs 1,399/-\nsummer weddings? sorted. beach? sorted. 😎",
+      "label": {
+        "name": "TAXI Camp Collar Shirt",
+        "pricePaise": 139900,
+        "stock": null,
+        "variantLabels": ["M", "L", "XL"],
+        "variantStock": {},
+        "description": "Viscose camp collar shirt with a kaali-peeli taxi inspired print."
+      },
+      "tests": "Clean caption with no stock — a control item, like the vest, so the dataset is not all traps."
+    },
+    {
+      "id": "28-chandni-glow-tee",
+      "image": "images/28-chandni-glow-tee.jpg",
+      "caption": "CHANDNI 🌕 glow print oversized tee (drop 2 of 3)\nglow-in-the-dark chaand print, 240 gsm, washed black\nS / M / L / XL / XXL\n999/- only\n21 pieces is drop mein 🌙 lights off karke dekho",
+      "label": {
+        "name": "CHANDNI Glow Print Oversized Tee",
+        "pricePaise": 99900,
+        "stock": 21,
+        "variantLabels": ["S", "M", "L", "XL", "XXL"],
+        "variantStock": {},
+        "description": "Washed black oversized tee in 240 GSM cotton with a glow-in-the-dark moon print."
+      },
+      "tests": "'drop 2 of 3' puts two small integers right next to the name; stock is the 21 in prose. Price '999/- only' has no currency marker."
+    }
+  ]
+}
