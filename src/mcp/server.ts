@@ -124,10 +124,11 @@ export function createMcpServer(deps: StorefrontDeps): McpServer {
       description:
         'Register as an Agent with this merchant and declare your Cap — the maximum total ' +
         'you authorize spending here, in integer paise (e.g. 500000 = ₹5,000.00). Returns ' +
-        'an agentToken; pass it on every checkout and get_order_status call. The merchant ' +
-        'holds your Ed25519 keypair in custody and signs on your behalf. Registering again ' +
-        'creates a brand-new Agent with a fresh Cap — the Cap of an existing registration ' +
-        'can never be changed.',
+        'an agentToken; pass it on every checkout and get_order_status call. By default the ' +
+        'merchant holds your Ed25519 keypair in custody and signs on your behalf; supply ' +
+        'your own publicKey instead to keep the private key client-side and sign your ' +
+        'mandates locally. Registering again creates a brand-new Agent with a fresh Cap — ' +
+        'the Cap of an existing registration can never be changed.',
       inputSchema: {
         capPaise: z
           .number()
@@ -135,16 +136,29 @@ export function createMcpServer(deps: StorefrontDeps): McpServer {
             'Your spend ceiling with this merchant, as a positive integer number of paise. ' +
               'Not rupees, no decimals: 500000 means ₹5,000.00.',
           ),
+        publicKey: z
+          .string()
+          .optional()
+          .describe(
+            'Client-side custody: your own Ed25519 public key, base64-encoded SPKI DER. ' +
+              'When supplied the server stores no private key and you must sign every ' +
+              'Intent/Cart/Payment mandate locally. Omit for merchant custody.',
+          ),
       },
     },
-    withToolErrors(async ({ capPaise }) => {
-      const registration = await registerAgent(deps.db, deps.merchantId, { capPaise });
+    withToolErrors(async ({ capPaise, publicKey }) => {
+      const registration = await registerAgent(deps.db, deps.merchantId, { capPaise, publicKey });
       return textResult({
         ...registration,
         note:
-          'Keep agentToken for every subsequent call. Your private key stays in merchant ' +
-          'custody and is never returned. To change the Cap, register again: that mints ' +
-          'a new Agent with the new Cap.',
+          registration.custody === 'client'
+            ? 'Keep agentToken for every subsequent call. The server stored only your public ' +
+              'key: sign each mandate payload locally (Ed25519 over its canonical JSON) and ' +
+              'pass the signatures to declare_intent and submit_payment. To change the Cap, ' +
+              'register again: that mints a new Agent with the new Cap.'
+            : 'Keep agentToken for every subsequent call. Your private key stays in merchant ' +
+              'custody and is never returned. To change the Cap, register again: that mints ' +
+              'a new Agent with the new Cap.',
       });
     }),
   );
@@ -155,9 +169,11 @@ export function createMcpServer(deps: StorefrontDeps): McpServer {
       title: 'Declare intent',
       description:
         'Step 1 of buying: declare WHAT you want and the most you authorize spending on it. ' +
-        'The merchant signs an Intent mandate with your custodial key and returns its ' +
-        'intentHash — pass that to create_cart next. Requires the agentToken from ' +
-        'register_agent. budgetPaise is integer paise: 300000 means ₹3,000.00.',
+        'Custodial Agents: the merchant signs the Intent mandate with your custodial key. ' +
+        'Client-custody Agents: mint createdAt, sign the canonical payload ' +
+        '{agentId, merchantId, want, budgetPaise, createdAt} locally, and pass createdAt + ' +
+        'signature. Returns the intentHash — pass that to create_cart next. Requires the ' +
+        'agentToken from register_agent. budgetPaise is integer paise: 300000 means ₹3,000.00.',
       inputSchema: {
         agentToken: z
           .string()
@@ -172,16 +188,30 @@ export function createMcpServer(deps: StorefrontDeps): McpServer {
             'Your Budget for THIS purchase, as a positive integer number of paise. ' +
               'Not rupees, no decimals: 300000 means ₹3,000.00.',
           ),
+        createdAt: z
+          .string()
+          .optional()
+          .describe(
+            'Client-custody Agents only: the ISO-8601 timestamp you put in the Intent ' +
+              'payload you signed. Omit for custodial Agents.',
+          ),
+        signature: z
+          .string()
+          .optional()
+          .describe(
+            'Client-custody Agents only: your base64 Ed25519 signature over the canonical ' +
+              'JSON of the Intent payload. Omit for custodial Agents.',
+          ),
       },
     },
-    withToolErrors(async ({ agentToken, want, budgetPaise }) => {
+    withToolErrors(async ({ agentToken, want, budgetPaise, createdAt, signature }) => {
       const agent = await requireRegisteredAgent(
         deps.db,
         deps.merchantId,
         agentToken,
         'declare_intent',
       );
-      const result = await declareIntent(deps.db, agent, { want, budgetPaise });
+      const result = await declareIntent(deps.db, agent, { want, budgetPaise, createdAt, signature });
       return textResult({
         intentHash: result.intentHash,
         payload: result.payload,
@@ -202,8 +232,10 @@ export function createMcpServer(deps: StorefrontDeps): McpServer {
         'Step 2 of buying: turn an Intent into a priced, immutable Cart mandate. One shot — ' +
         'there is no cart editing; to change items, just call create_cart again (earlier ' +
         'carts stay valid and unpaid, nothing is invalidated). Pins the current catalog ' +
-        'prices and is signed by both your custodial key and the merchant key. Returns the ' +
-        'cartHash to pass to submit_payment. Requires the agentToken from register_agent.',
+        'prices and is signed by the merchant key, plus your custodial key (custodial ' +
+        'Agents) — client-custody Agents sign the returned payload locally and hand that ' +
+        'signature to submit_payment as cartSignature. Returns the cartHash to pass to ' +
+        'submit_payment. Requires the agentToken from register_agent.',
       inputSchema: {
         agentToken: z
           .string()
@@ -237,9 +269,15 @@ export function createMcpServer(deps: StorefrontDeps): McpServer {
         total: result.total,
         items: result.items,
         nextStep:
-          'Call submit_payment with this cartHash and a fresh UUID you mint as ' +
-          'idempotencyKey. If prices change before then, submit_payment refuses ' +
-          'PRICE_CHANGED and you simply create_cart again.',
+          result.agentSignature === null
+            ? 'Sign the canonical JSON of this exact payload with your local key, then call ' +
+              'submit_payment with this cartHash, that signature as cartSignature, a locally ' +
+              'signed Payment mandate (paymentCreatedAt + paymentSignature), and a fresh UUID ' +
+              'you mint as idempotencyKey. If prices change before then, submit_payment ' +
+              'refuses PRICE_CHANGED and you simply create_cart again.'
+            : 'Call submit_payment with this cartHash and a fresh UUID you mint as ' +
+              'idempotencyKey. If prices change before then, submit_payment refuses ' +
+              'PRICE_CHANGED and you simply create_cart again.',
       });
     }),
   );
@@ -249,12 +287,16 @@ export function createMcpServer(deps: StorefrontDeps): McpServer {
     {
       title: 'Submit payment',
       description:
-        'Step 3 of buying: authorize payment of one Cart mandate. The server signs your ' +
-        'Payment mandate, verifies the whole Intent → Cart → Payment chain (signatures, ' +
-        'hashes, pinned prices, stock) and only then creates the Order and returns a ' +
-        'Razorpay-hosted payment link. No money moves until the human approves that link. ' +
-        'Mint a fresh UUID as idempotencyKey for every new payment attempt and reuse it ' +
-        'only when retrying this exact cart. Requires the agentToken from register_agent.',
+        'Step 3 of buying: authorize payment of one Cart mandate. Custodial Agents: the ' +
+        'server signs your Payment mandate. Client-custody Agents: sign the Payment payload ' +
+        '{agentId, merchantId, cartHash, idempotencyKey, createdAt} locally and pass ' +
+        'paymentCreatedAt + paymentSignature, plus cartSignature — your signature over the ' +
+        'Cart payload create_cart returned. The server verifies the whole Intent → Cart → ' +
+        'Payment chain (signatures, hashes, pinned prices, stock) and only then creates the ' +
+        'Order and returns a Razorpay-hosted payment link. No money moves until the human ' +
+        'approves that link. Mint a fresh UUID as idempotencyKey for every new payment ' +
+        'attempt and reuse it only when retrying this exact cart. Requires the agentToken ' +
+        'from register_agent.',
       inputSchema: {
         agentToken: z
           .string()
@@ -265,34 +307,70 @@ export function createMcpServer(deps: StorefrontDeps): McpServer {
           .string()
           .min(1)
           .describe('A fresh UUID you mint for this payment attempt.'),
+        cartSignature: z
+          .string()
+          .optional()
+          .describe(
+            'Client-custody Agents only: your base64 Ed25519 signature over the canonical ' +
+              'JSON of the exact Cart payload create_cart returned. Omit for custodial Agents.',
+          ),
+        paymentCreatedAt: z
+          .string()
+          .optional()
+          .describe(
+            'Client-custody Agents only: the ISO-8601 timestamp you put in the Payment ' +
+              'payload you signed. Omit for custodial Agents.',
+          ),
+        paymentSignature: z
+          .string()
+          .optional()
+          .describe(
+            'Client-custody Agents only: your base64 Ed25519 signature over the canonical ' +
+              'JSON of the Payment payload. Omit for custodial Agents.',
+          ),
       },
     },
-    withToolErrors(async ({ agentToken, cartHash, idempotencyKey }) => {
-      // The trust gate runs first — an unregistered agent is refused before
-      // any Order exists and before the gateway is ever touched.
-      const agent = await requireRegisteredAgent(
-        deps.db,
-        deps.merchantId,
+    withToolErrors(
+      async ({
         agentToken,
-        'submit_payment',
-      );
-      const result = await submitPayment(deps, agent, { cartHash, idempotencyKey });
-      return textResult({
-        orderId: result.orderId,
-        status: result.status,
-        total: result.total,
-        items: result.items,
-        paymentLinkUrl: result.paymentLinkUrl,
-        gatewayPaymentLinkId: result.gatewayPaymentLinkId,
-        paymentMandate: result.paymentMandate,
-        nextStep:
-          'Give paymentLinkUrl to your human and ask them to approve it. ' +
-          'In Razorpay test mode the UPI id success@razorpay completes the payment. ' +
-          `Then call get_order_status with orderId ${result.orderId}; once paid it ` +
-          'includes the merchant-signed Receipt.',
-        auditUrl: `${deps.publicBaseUrl}/audit/${result.orderId}`,
-      });
-    }),
+        cartHash,
+        idempotencyKey,
+        cartSignature,
+        paymentCreatedAt,
+        paymentSignature,
+      }) => {
+        // The trust gate runs first — an unregistered agent is refused before
+        // any Order exists and before the gateway is ever touched.
+        const agent = await requireRegisteredAgent(
+          deps.db,
+          deps.merchantId,
+          agentToken,
+          'submit_payment',
+        );
+        const result = await submitPayment(deps, agent, {
+          cartHash,
+          idempotencyKey,
+          cartSignature,
+          paymentCreatedAt,
+          paymentSignature,
+        });
+        return textResult({
+          orderId: result.orderId,
+          status: result.status,
+          total: result.total,
+          items: result.items,
+          paymentLinkUrl: result.paymentLinkUrl,
+          gatewayPaymentLinkId: result.gatewayPaymentLinkId,
+          paymentMandate: result.paymentMandate,
+          nextStep:
+            'Give paymentLinkUrl to your human and ask them to approve it. ' +
+            'In Razorpay test mode the UPI id success@razorpay completes the payment. ' +
+            `Then call get_order_status with orderId ${result.orderId}; once paid it ` +
+            'includes the merchant-signed Receipt.',
+          auditUrl: `${deps.publicBaseUrl}/audit/${result.orderId}`,
+        });
+      },
+    ),
   );
 
   server.registerTool(

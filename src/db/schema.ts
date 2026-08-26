@@ -79,9 +79,16 @@ export const agents = pgTable(
       .references(() => merchants.id),
     /** Bearer token the Agent presents on every tool call (`agt_tok_…`). */
     token: text('token').notNull(),
-    /** Custodial Ed25519 keypair, base64 DER — the server signs on the Agent's behalf (T4). */
+    /**
+     * The Agent's Ed25519 key material, base64 DER (ADR-0004, split custody).
+     * Custodial Agents (connector buyers) store the whole keypair and the
+     * server signs on their behalf (T4). Client-custody Agents (the SDK buyer,
+     * T6) registered with their own public key: `private_key` is NULL, the
+     * server never held it, and every agent signature arrives from the client.
+     * `private_key IS NULL` ⇔ client custody — there is no separate flag.
+     */
     publicKey: text('public_key').notNull(),
-    privateKey: text('private_key').notNull(),
+    privateKey: text('private_key'),
     /** The buyer-declared spend ceiling for this registration. Integer paise. */
     capPaise: integer('cap_paise').notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -202,12 +209,15 @@ export const orderItems = pgTable(
  * The mandate tables — insert-only records of *immutable signed artifacts*.
  *
  * ADR-0002 forbids a mutable draft cart, not storage of signed mandates: no
- * code path updates a mandate row's payload or signatures, ever. Each `payload`
- * jsonb is the exact canonical-signed payload; signatures are base64 text
- * stored alongside it, never inside it (signing a payload containing its own
- * signature would be circular). `hash` is sha256 of the canonical payload and
- * is how chain links resolve — Cart embeds the Intent's hash, Payment embeds
- * the Cart's (CONTEXT.md → Mandate chain).
+ * code path updates a mandate row's payload or signatures — with exactly one
+ * sanctioned exception: a client-custody Agent's deferred Cart signature is
+ * filled NULL → value at payment time, after verification, under an `IS NULL`
+ * guard (ADR-0004). Each `payload` jsonb is the exact canonical-signed
+ * payload; signatures are base64 text stored alongside it, never inside it
+ * (signing a payload containing its own signature would be circular). `hash`
+ * is sha256 of the canonical payload and is how chain links resolve — Cart
+ * embeds the Intent's hash, Payment embeds the Cart's (CONTEXT.md → Mandate
+ * chain).
  */
 
 /** Root of the chain: Agent-signed want + Budget (CONTEXT.md → Intent mandate). */
@@ -264,7 +274,15 @@ export const cartMandates = pgTable(
     totalAmountPaise: integer('total_amount_paise').notNull(),
     /** Pin of the priced items; payment-time recompute mismatch → PRICE_CHANGED. */
     priceHash: text('price_hash').notNull(),
-    agentSignature: text('agent_signature').notNull(),
+    /**
+     * NULL only for a client-custody Agent's cart until it is paid (ADR-0004):
+     * the server composes the Cart but never signs for such an Agent, so the
+     * Agent's signature arrives with submit_payment, is verified against the
+     * Agent's public key at the trust gate, and is persisted here (NULL →
+     * value, exactly once, in the order transaction). The payload and the
+     * merchant signature stay immutable as ever.
+     */
+    agentSignature: text('agent_signature'),
     merchantSignature: text('merchant_signature').notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },

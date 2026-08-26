@@ -72,7 +72,8 @@ describe('agent registration and the token gate, through the MCP tools', () => {
     // The custodial keypair is real: the stored private key signs, the public
     // key the buyer was shown verifies.
     expect(row!.publicKey).toBe(body['publicKey']);
-    const signature = signMessage(row!.privateKey, 'proof');
+    expect(row!.privateKey).not.toBeNull();
+    const signature = signMessage(row!.privateKey!, 'proof');
     expect(verifyMessage(row!.publicKey, 'proof', signature)).toBe(true);
 
     // Registration is audited (ADR-0003, same transaction as the row) — and
