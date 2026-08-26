@@ -10,8 +10,12 @@
   },
   "packageManager": "npm@10.9.3",
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "npm run build:server && npm run build:viewer",
+    "build:server": "tsc -p tsconfig.build.json",
+    "build:viewer": "vite build viewer",
     "typecheck": "tsc -p tsconfig.json --noEmit",
+    "typecheck:viewer": "tsc -p viewer/tsconfig.json --noEmit",
+    "dev:viewer": "vite viewer",
     "test": "vitest run",
     "start": "node dist/index.js",
     "dev": "node --watch --experimental-strip-types src/index.ts",
@@ -35,9 +39,16 @@
     "@electric-sql/pglite": "^0.5.7",
     "@types/express": "^5.0.6",
     "@types/node": "^22.15.3",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.5",
     "@types/ws": "^8.18.1",
+    "@vitejs/plugin-react": "^6.1.0",
     "drizzle-kit": "^0.31.10",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "react-router-dom": "^7.18.2",
     "typescript": "^5.9.3",
+    "vite": "^8.2.2",
     "vitest": "^4.1.11"
   }
 }
