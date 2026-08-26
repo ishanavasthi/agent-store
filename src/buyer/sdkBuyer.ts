@@ -12,7 +12,7 @@ import {
 import { LocalSigner, type SignedMandate } from './localSigner.js';
 
 /**
- * The scripted non-custodial buyer (T6): drives one full purchase through the
+ * The scripted client-custody buyer (T6): drives one full purchase through the
  * MCP protocol surface — the same tools every buyer uses — while holding its
  * Ed25519 key client-side and signing every agent-side mandate locally
  * (ADR-0004). The server sees the public key at registration and signatures
@@ -87,6 +87,11 @@ export interface SdkBuyerPurchase {
   };
 }
 
+// callTool/expectString deliberately parallel `call` in
+// src/testSupport/mcpTestClient.ts: testSupport is excluded from the shipped
+// build (tsconfig.build.json), so the buyer cannot import it — the small
+// duplication is sanctioned.
+
 /** One tool call over the wire, with the JSON body parsed back out. */
 async function callTool(
   client: Client,
@@ -113,7 +118,7 @@ function expectString(body: Record<string, unknown>, key: string, tool: string):
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
- * Run one full non-custodial purchase: generate nothing server-side —
+ * Run one full client-custody purchase: generate nothing server-side —
  * register with the signer's public key, sign Intent, Cart, and Payment
  * locally, hand the payment link to `approvePayment`, and poll until the
  * merchant-signed Receipt arrives and independently verifies.

@@ -26,7 +26,7 @@ import { LocalSigner } from './localSigner.js';
 import { runSdkBuyerPurchase } from './sdkBuyer.js';
 
 /**
- * T6's acceptance proof (issue #7): the non-custodial buyer completes a full
+ * T6's acceptance proof (issue #7): the client-custody buyer completes a full
  * purchase against the SAME protocol surface, holding its Ed25519 key
  * client-side (ADR-0004). Driven through the MCP tools over an in-memory
  * client/server pair exactly like the custodial suites — the custody split
@@ -42,7 +42,7 @@ import { runSdkBuyerPurchase } from './sdkBuyer.js';
 const TEE = 'var_test_tee_default';
 const CAP = 'var_test_cap_default';
 
-describe('the non-custodial SDK buyer, through the MCP tools', () => {
+describe('the client-custody SDK buyer, through the MCP tools', () => {
   let handle: TestDatabaseHandle;
   let gateway: StubGateway;
   let deps: StorefrontDeps;
