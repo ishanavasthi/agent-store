@@ -8,6 +8,31 @@ Each entry is **Symptom → Cause → Fix → Lesson**. The Cause is the mechani
 
 ---
 
+## 2026-08-26 — T13 merchant confirmation screen
+
+### The new `/merchant/confirmations` endpoint 500s against Neon while every test is green
+
+**Symptom** — a local smoke run of the built server against the shared Neon database answered
+`{"error":"internal_error"}` on `GET /merchant/confirmations`, with the log showing Postgres
+`42703: column "extraction" does not exist` — while the full test suite (which runs the same
+query) passed, and the same code worked against PGlite.
+
+**Cause** — migrations reach Neon only through Railway's `preDeployCommand` (S1 spike
+finding: the build sandbox cannot open the Neon WebSocket, so `db:migrate:prod` runs at
+deploy). T12's migration `0008_ingestion_confidence.sql` — which adds `products.extraction` —
+merged to main but had not been *deployed* yet, so the shared database was one migration
+behind the code on every developer machine. Tests never see this because PGlite databases are
+created from the committed migrations at full depth.
+
+**Fix** — none needed in code: the next deploy of main applies 0008 before the new code
+serves traffic, which is exactly the ordering `preDeployCommand` exists to guarantee. The
+smoke run was re-pointed at PGlite-backed tests instead.
+
+**Lesson** — "merged" and "migrated" are different states for the shared Neon database.
+A branch that reads columns from the latest migration will 500 against Neon until main
+deploys — check `drizzle/` depth against the deployed revision before concluding the new
+query is wrong.
+
 ## 2026-08-26 — T12 ingestion pipeline
 
 ### `fetch` to api.openai.com died ENOTFOUND while `nslookup` resolved it fine

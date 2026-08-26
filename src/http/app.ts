@@ -23,6 +23,7 @@ import {
 import { refundOversoldOrder } from '../domain/oversell.js';
 import { RAZORPAY_SIGNATURE_HEADER, WebhookParseError } from '../gateway/razorpayWebhook.js';
 import { createMcpServer } from '../mcp/server.js';
+import { createMerchantRouter } from './merchantConfirmation.js';
 import {
   DISCOVERY_PATH,
   REST_BASE_PATH,
@@ -169,6 +170,13 @@ export function createApp(deps: StorefrontDeps): Express {
   });
 
   // ---------------------------------------------------------------------------
+  // Merchant — the confirmation screen's API (T13). What the `/viewer/confirm`
+  // routes read and write; the publish gate itself lives in the domain layer,
+  // so raw HTTP meets the same wall as the UI.
+  // ---------------------------------------------------------------------------
+  app.use('/merchant', createMerchantRouter(deps));
+
+  // ---------------------------------------------------------------------------
   // Audit — the whole point of ADR-0003 made visible. The T7 React viewer reads
   // exactly these endpoints; the rule-auditor reads exactly this data.
   //
@@ -302,6 +310,8 @@ export function createApp(deps: StorefrontDeps): Express {
         `${REST_BASE_PATH}/payments`,
         `${REST_BASE_PATH}/orders/:orderId`,
         '/webhooks/razorpay',
+        '/merchant/confirmations',
+        '/merchant/confirmations/:productId',
         '/audit',
         '/audit/:orderId',
         '/audit/refusals/:seq',

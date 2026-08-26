@@ -28,6 +28,27 @@ export interface HoldReason {
   readonly reason: string;
 }
 
+/**
+ * What the merchant answered at the confirmation screen (T13), stamped onto the
+ * extraction record in the same transaction as the `needs-confirmation →
+ * published` transition. Provenance, not state: the numbers checkout trusts
+ * still live only in the `products`/`variants` columns — this exists so "what
+ * the model said" and "what the merchant answered" stay readable side by side.
+ */
+export interface ConfirmationStamp {
+  readonly confirmedAt: string;
+  readonly submitted: {
+    readonly title: string;
+    readonly description: string | null;
+    readonly variants: ReadonlyArray<{
+      readonly label: string | null;
+      /** Integer paise, like money everywhere else. Display/audit data only. */
+      readonly pricePaise: number;
+      readonly stock: number;
+    }>;
+  };
+}
+
 export interface ProductExtractionRecord {
   readonly version: 1;
   /** The dataset item this Product came from, e.g. `04-galli-cargo-pants`. */
@@ -56,4 +77,6 @@ export interface ProductExtractionRecord {
   };
   /** Empty exactly when the Product auto-published. */
   readonly holds: HoldReason[];
+  /** Present exactly when the merchant confirmed this Product (T13). */
+  readonly confirmation?: ConfirmationStamp;
 }

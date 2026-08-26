@@ -106,7 +106,23 @@ export type ValidationErrorCode =
    */
   | 'CUSTODY_MISMATCH'
   /** A client-minted `createdAt` that is not an ISO-8601 timestamp. */
-  | 'INVALID_CREATED_AT';
+  | 'INVALID_CREATED_AT'
+  // T13 — the merchant confirmation screen. These are *merchant-side* input
+  // problems, so they are validation errors, never Refusals: a Refusal is the
+  // trust layer telling a *buyer* no on the money path (CONTEXT.md → Failure
+  // vocabulary), and no buyer is anywhere near this seam.
+  /** A `productId` that names no Product of this Merchant. */
+  | 'PRODUCT_NOT_FOUND'
+  /** The Product is not in `needs-confirmation` — nothing to confirm (or it already was). */
+  | 'PRODUCT_NOT_CONFIRMABLE'
+  /**
+   * A confirmation submission whose *values* cannot publish: empty title,
+   * non-integer or non-positive price, negative or missing stock, duplicate
+   * variant labels, a null label among several variants, an unknown variantId.
+   * The server refuses these regardless of what the UI allowed (issue #14:
+   * nothing unconfirmed — and nothing invented — is ever published).
+   */
+  | 'INVALID_CONFIRMATION';
 
 /**
  * A malformed or unsatisfiable request. Deliberately a *different shape* from
