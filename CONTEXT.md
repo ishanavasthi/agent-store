@@ -43,6 +43,9 @@ The product-level state in which an Agent can see and buy a Product. Lifecycle: 
 **Confirmation**:
 The Merchant's act of approving or correcting extracted fields whose confidence fell below the auto-publish threshold. High-confidence fields publish without it.
 
+**Auto-publish threshold**:
+The confidence at/above which an extracted field publishes without Confirmation (`AUTO_PUBLISH_THRESHOLD`, currently 0.90 — tuned on the committed accuracy run, because model self-reported confidence is uncalibrated and never read as probability). Stock is stricter than any threshold: a Variant's stock is either a count the caption *states* or null — never defaulted, never a total split by guesswork — and any null-price or null-stock Variant holds the whole Product out of `published`.
+
 ### Purchase flow
 
 **Intent mandate**:

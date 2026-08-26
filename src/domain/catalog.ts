@@ -25,11 +25,24 @@ interface VariantRowShape {
   productTitle: string;
   description: string | null;
   label: string | null;
-  pricePaise: number;
-  stock: number;
+  pricePaise: number | null;
+  stock: number | null;
 }
 
+/**
+ * Every query in this file filters on `status = 'published'`, and the T12
+ * ingestion gate guarantees a published Product's Variants all carry a real
+ * price and stock (see `db/schema.ts` → variants). A null here means someone
+ * published a Product around the gate — refusing loudly beats selling a
+ * Variant at an invented price.
+ */
 function toView(row: VariantRowShape): VariantView {
+  if (row.pricePaise === null || row.stock === null) {
+    throw new Error(
+      `Published variant ${row.variantId} has null ${row.pricePaise === null ? 'price' : 'stock'}; ` +
+        `a Product must not reach 'published' with unconfirmed fields`,
+    );
+  }
   return {
     variantId: row.variantId,
     productId: row.productId,

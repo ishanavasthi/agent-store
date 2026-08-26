@@ -23,6 +23,7 @@ function extraction(overrides: Partial<ProductExtraction> = {}): ProductExtracti
     priceText: { value: '₹1,299/-', confidence: 0.95 },
     stock: { value: 12, confidence: 0.9 },
     variantLabels: { value: ['S', 'M', 'L', 'XL'], confidence: 0.9 },
+    variantStock: { value: {}, confidence: 0.9 },
     ...overrides,
   };
 }

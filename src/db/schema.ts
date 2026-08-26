@@ -11,6 +11,7 @@ import {
   uniqueIndex,
 } from 'drizzle-orm/pg-core';
 import { AUDIT_EVENT_TYPES } from '../domain/auditEvents.js';
+import type { ProductExtractionRecord } from '../ingestion/extractionRecord.js';
 
 /**
  * Schema notes that outlive T1:
@@ -109,6 +110,13 @@ export const products = pgTable(
     title: text('title').notNull(),
     description: text('description'),
     status: productStatus('status').notNull().default('draft'),
+    /**
+     * How ingestion read this Product's fields — per-field values, confidences
+     * and hold reasons (T12). Null for hand-seeded rows that never went through
+     * extraction. T13's confirmation screen renders this; checkout never reads
+     * it — the numbers money trusts live in the `variants` columns.
+     */
+    extraction: jsonb('extraction').$type<ProductExtractionRecord>(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [index('products_merchant_status_idx').on(table.merchantId, table.status)],
@@ -118,6 +126,14 @@ export const products = pgTable(
  * The sellable unit (CONTEXT.md → Variant). Every Product has at least one, so
  * checkout never branches on "has variants?" — a product with no stated
  * size/colour gets one row with `isDefault = true` and a null label.
+ *
+ * `pricePaise` and `stock` are nullable since T12: a Variant belonging to a
+ * Product in `needs-confirmation` may honestly not know them yet — the caption
+ * never stated a count, or stated a total the merchant still has to split
+ * across sizes — and writing a defaulted number would be fiction in exactly
+ * the columns checkout and the oversell check trust. The invariant, enforced
+ * by the ingestion gate and asserted in `domain/catalog.ts`: **every Variant
+ * of a `published` Product has non-null price and stock.**
  */
 export const variants = pgTable(
   'variants',
@@ -129,9 +145,9 @@ export const variants = pgTable(
     /** e.g. "M / Black". Null on the implicit default Variant. */
     label: text('label'),
     isDefault: boolean('is_default').notNull().default(false),
-    pricePaise: integer('price_paise').notNull(),
+    pricePaise: integer('price_paise'),
     currency: text('currency').notNull().default('INR'),
-    stock: integer('stock').notNull(),
+    stock: integer('stock'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [index('variants_product_idx').on(table.productId)],
