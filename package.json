@@ -23,6 +23,8 @@
     "db:migrate": "node --experimental-strip-types src/db/migrate.ts",
     "db:seed": "node --experimental-strip-types src/db/seed.ts",
     "spike:extraction": "npm run build && node dist/ingestion/spike/runExtractionSpike.js",
+    "evals": "npm run build:server && node dist/evals/protocol/cli.js",
+    "audit:rules": "npm run build:server && node dist/evals/protocol/auditRules.js",
     "ingest:accuracy": "npm run build:server && node dist/ingestion/runAccuracy.js",
     "ingest:demo": "npm run build:server && node dist/ingestion/runIngestDemo.js",
     "evals:live": "npm run build:server && node dist/evals/live/cli.js",
