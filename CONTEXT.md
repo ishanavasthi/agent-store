@@ -14,6 +14,10 @@ _Avoid_: buyer account, user, client
 The seller — a first-class entity owning a catalog and a signing key. v1 deploys exactly one, but nothing assumes that.
 _Avoid_: store, shop, seller
 
+**Custody**:
+Where an Agent's private key lives, fixed at registration (see ADR-0004). *Custodial*: the server mints and holds the keypair and signs on the Agent's behalf (connector buyers). *Client custody*: the Agent registered with its own public key, the server stores no private key (`private_key IS NULL` — that column is the whole model), and every agent-side signature is computed client-side and verified against the registered key. Both buy through the same tools.
+_Avoid_: non-custodial account, wallet, key escrow
+
 ### Catalog
 
 **Product**:
