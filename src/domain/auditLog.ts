@@ -1,7 +1,9 @@
-import { and, asc, eq, isNull, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 import type { Executor, Transaction } from '../db/client.js';
 import { auditEvents, cartMandates, paymentMandates } from '../db/schema.js';
 import {
+  isRefusalEventType,
+  REFUSAL_EVENT_TYPES,
   toAuditChain,
   type AuditChainEntry,
   type AuditEventRecord,
@@ -105,6 +107,112 @@ export async function readPurchaseAuditChain(
     .orderBy(asc(auditEvents.seq));
 
   return toAuditChain(rows.map(toRecord));
+}
+
+/**
+ * The most recent standalone Refusal events, newest first — the `GET /audit`
+ * directory's refusal list. Canonical `seq` order reversed, not a timestamp
+ * sort, for the same reason `toAuditChain` orders by `seq`.
+ */
+export async function listRecentRefusals(
+  executor: Executor,
+  merchantId: string,
+  limit: number,
+): Promise<AuditChainEntry[]> {
+  const rows = await executor
+    .select()
+    .from(auditEvents)
+    .where(
+      and(
+        eq(auditEvents.merchantId, merchantId),
+        inArray(auditEvents.type, [...REFUSAL_EVENT_TYPES]),
+      ),
+    )
+    .orderBy(desc(auditEvents.seq))
+    .limit(limit);
+
+  return toAuditChain(rows.map(toRecord)).reverse();
+}
+
+export interface RefusalContext {
+  readonly refusal: AuditChainEntry;
+  /** The refusal's purchase-attempt context in `seq` order, refusal included. */
+  readonly events: AuditChainEntry[];
+}
+
+/**
+ * Read one standalone Refusal and its purchase-attempt context, addressed by
+ * audit `seq` — a Refusal has no Order to be addressed by.
+ *
+ * Context is recovered through the hashes the refusal payload already carries
+ * (the `readPurchaseAuditChain` linkage trick): a `payment.refused` names its
+ * `intentHash`/`cartHash`, which find the `mandate.intent_declared` /
+ * `mandate.cart_created` events and any sibling refusals of the same attempt.
+ * `agent.refused` / `mandate.refused` carry no hashes because the refusal
+ * happened before any chain existed — the single event IS the complete story.
+ *
+ * Null when the seq names nothing, or names an event that is not a Refusal.
+ */
+export async function readRefusalContext(
+  executor: Executor,
+  merchantId: string,
+  seq: number,
+): Promise<RefusalContext | null> {
+  const [row] = await executor
+    .select()
+    .from(auditEvents)
+    .where(and(eq(auditEvents.seq, seq), eq(auditEvents.merchantId, merchantId)))
+    .limit(1);
+  if (row === undefined || !isRefusalEventType(row.type)) {
+    return null;
+  }
+
+  const record = toRecord(row);
+  const intentHash = asHash(record.payload['intentHash']);
+  const cartHash = asHash(record.payload['cartHash']);
+
+  if (intentHash === null && cartHash === null) {
+    const events = toAuditChain([record]);
+    return { refusal: events[0]!, events };
+  }
+
+  const contextConditions = [
+    eq(auditEvents.seq, seq),
+    ...(cartHash === null
+      ? []
+      : [
+          and(
+            eq(auditEvents.type, 'mandate.cart_created'),
+            sql`${auditEvents.payload}->>'cartHash' = ${cartHash}`,
+          ),
+        ]),
+    ...(intentHash === null
+      ? []
+      : [
+          and(
+            eq(auditEvents.type, 'mandate.intent_declared'),
+            sql`${auditEvents.payload}->>'intentHash' = ${intentHash}`,
+          ),
+          // Sibling refusals of the same attempt: retries under one Intent.
+          and(
+            inArray(auditEvents.type, [...REFUSAL_EVENT_TYPES]),
+            sql`${auditEvents.payload}->>'intentHash' = ${intentHash}`,
+          ),
+        ]),
+  ];
+
+  const rows = await executor
+    .select()
+    .from(auditEvents)
+    .where(and(eq(auditEvents.merchantId, merchantId), or(...contextConditions)))
+    .orderBy(asc(auditEvents.seq));
+
+  const events = toAuditChain(rows.map(toRecord));
+  return { refusal: events.find((event) => event.seq === seq)!, events };
+}
+
+function asHash(value: unknown): string | null {
+  return typeof value === 'string' && value !== '' ? value : null;
 }
 
 function toRecord(row: typeof auditEvents.$inferSelect): AuditEventRecord {

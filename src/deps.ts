@@ -15,4 +15,11 @@ export interface StorefrontDeps {
   /** v1 serves exactly one Merchant per deployment (PLAN §4). */
   readonly merchantId: string;
   readonly publicBaseUrl: string;
+  /**
+   * Where the built T7 viewer SPA lives. Defaults to `<cwd>/dist/viewer` —
+   * both `npm run dev` and the deploy's `npm start` run at the repo root.
+   * Tests point it at a stub dir; absent entirely, `/viewer` 404s and the
+   * rest of the app keeps working.
+   */
+  readonly viewerDistDir?: string;
 }
