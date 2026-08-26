@@ -4,9 +4,11 @@ import { parseRazorpayWebhook, verifyRazorpaySignature } from './razorpayWebhook
 import {
   GatewayError,
   type CreatePaymentLinkParams,
+  type GatewayRefund,
   type GatewayWebhookEvent,
   type PaymentGateway,
   type PaymentLink,
+  type RefundPaymentParams,
 } from './types.js';
 
 /**
@@ -60,6 +62,8 @@ interface StubLink {
    * only record of a capture, it is also what "already paid" means here.
    */
   paidDeliveries: readonly SyntheticWebhook[] | null;
+  /** Set when the captured payment has been refunded — a second refund throws. */
+  refundedByRefundId: string | null;
 }
 
 export class StubGateway implements PaymentGateway {
@@ -84,6 +88,7 @@ export class StubGateway implements PaymentGateway {
       notes: { ...params.notes },
       failedAttempts: 0,
       paidDeliveries: null,
+      refundedByRefundId: null,
     };
     this.#links.set(link.gatewayPaymentLinkId, link);
     return {
@@ -176,6 +181,38 @@ export class StubGateway implements PaymentGateway {
         },
       }),
     ];
+  }
+
+  /**
+   * Refund a captured payment, deterministically (`rfnd_stub_<seq>`). The
+   * stub enforces exactly the real gateway's test-mode rules (PLAN §5.5):
+   * only a **captured** payment refunds, at most its captured amount, and only
+   * once in full — anything else throws `GatewayError`, so a script that tries
+   * to refund money that never moved fails loud instead of minting fiction.
+   */
+  async refundPayment(params: RefundPaymentParams): Promise<GatewayRefund> {
+    const link = [...this.#links.values()].find(
+      (candidate) =>
+        candidate.paidDeliveries !== null && `pay_stub_${candidate.seq}` === params.gatewayPaymentId,
+    );
+    if (link === undefined) {
+      throw new GatewayError(
+        `No captured payment ${params.gatewayPaymentId} exists to refund — refunds work only against captured payments`,
+      );
+    }
+    if (link.refundedByRefundId !== null) {
+      throw new GatewayError(
+        `Payment ${params.gatewayPaymentId} is already fully refunded (${link.refundedByRefundId})`,
+      );
+    }
+    if (params.amountPaise < 1 || params.amountPaise > link.amountPaise) {
+      throw new GatewayError(
+        `Refund of ${params.amountPaise} paise exceeds the ${link.amountPaise} paise captured on ${params.gatewayPaymentId}`,
+      );
+    }
+    const gatewayRefundId = `rfnd_stub_${link.seq}`;
+    link.refundedByRefundId = gatewayRefundId;
+    return { gatewayRefundId, amountPaise: params.amountPaise, status: 'processed' };
   }
 
   #requireLink(gatewayPaymentLinkId: string): StubLink {

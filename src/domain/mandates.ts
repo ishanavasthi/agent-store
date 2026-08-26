@@ -74,6 +74,21 @@ export interface ReceiptPayload {
   readonly issuedAt: string;
 }
 
+/**
+ * Merchant-signed proof that an Oversell refund reversed the charge a specific
+ * Receipt attests (T9, PLAN §5.2). The chain link is `receiptHash` — the
+ * `hashMandate` of the original Receipt payload — so a verifier holding the
+ * original Receipt can bind refund to charge with no database in sight.
+ */
+export interface RefundReceiptPayload {
+  readonly orderId: string;
+  /** `hashMandate` of the original Receipt this refund reverses. */
+  readonly receiptHash: string;
+  readonly amountPaise: Paise;
+  readonly gatewayRefundId: string;
+  readonly refundedAt: string;
+}
+
 export type MandatePayload = IntentMandatePayload | CartMandatePayload | PaymentMandatePayload;
 
 /**
@@ -179,8 +194,23 @@ export function parseReceiptPayload(value: unknown): ReceiptPayload {
   };
 }
 
+export function parseRefundReceiptPayload(value: unknown): RefundReceiptPayload {
+  const what = 'Refund receipt payload';
+  const record = asRecord(value, what);
+  return {
+    orderId: asString(record, 'orderId', what),
+    receiptHash: asString(record, 'receiptHash', what),
+    amountPaise: asPaise(record, 'amountPaise', what),
+    gatewayRefundId: asString(record, 'gatewayRefundId', what),
+    refundedAt: asString(record, 'refundedAt', what),
+  };
+}
+
+/** Everything signed with `signMandate` and named by `hashMandate`. */
+type SignablePayload = MandatePayload | ReceiptPayload | RefundReceiptPayload;
+
 /** The hash that names a mandate (or Receipt) everywhere else in the chain. */
-export function hashMandate(payload: MandatePayload | ReceiptPayload): string {
+export function hashMandate(payload: SignablePayload): string {
   return sha256Hex(canonicalJson(payload));
 }
 
@@ -208,14 +238,14 @@ export function computeCartTotal(items: readonly CartItem[]): Paise {
 }
 
 /** Sign a payload's canonical JSON. Returns the detached base64 signature. */
-export function signMandate(privateKey: string, payload: MandatePayload | ReceiptPayload): string {
+export function signMandate(privateKey: string, payload: SignablePayload): string {
   return signMessage(privateKey, canonicalJson(payload));
 }
 
 /** Verify a detached signature against a payload's canonical JSON. */
 export function verifyMandateSignature(
   publicKey: string,
-  payload: MandatePayload | ReceiptPayload,
+  payload: SignablePayload,
   signature: string,
 ): boolean {
   return verifyMessage(publicKey, canonicalJson(payload), signature);

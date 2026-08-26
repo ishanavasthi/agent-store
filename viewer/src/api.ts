@@ -30,12 +30,19 @@ export interface OrderStatusView {
   readonly createdAt: string;
   readonly paidAt: string | null;
   readonly cancelledAt: string | null;
+  readonly refundedAt: string | null;
   /**
    * The structured Decline a fail-closed cancellation stored (T8) — a gateway
    * Decline, never a Refusal. Untyped beyond "object": rendered defensively
    * like every payload.
    */
   readonly decline: Record<string, unknown> | null;
+  /**
+   * The structured Oversell a refunded Order stored (T9) — a fulfilment-time
+   * stock shortfall after capture, automatically refunded; neither a Refusal
+   * nor a Decline. Rendered defensively like every payload.
+   */
+  readonly oversell: Record<string, unknown> | null;
 }
 
 /** Named as the server names it (src/domain/orders.ts) — one shape, one name. */

@@ -20,10 +20,10 @@ function FactValue({ name, value }: { name: string; value: unknown }) {
   return <>{JSON.stringify(value)}</>;
 }
 
-/** Cart lines get a real list; `reason` and `decline` are omitted — the verdict line already speaks them. */
+/** Cart lines get a real list; `reason`, `decline` and `oversell` are omitted — the verdict line already speaks them. */
 function Facts({ payload }: { payload: Record<string, unknown> }) {
   const entries = Object.entries(payload).filter(
-    ([key]) => key !== 'reason' && key !== 'items' && key !== 'decline',
+    ([key]) => key !== 'reason' && key !== 'items' && key !== 'decline' && key !== 'oversell',
   );
   const items = Array.isArray(payload['items']) ? (payload['items'] as unknown[]) : null;
   if (entries.length === 0 && items === null) return null;

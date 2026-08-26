@@ -295,6 +295,15 @@ a {
   border-color: var(--refused);
 }
 
+/* The Oversell ruling (T9): amber, not red — money moved and was sent back,
+   which is a kept promise, not a policy no. Its own class, because an
+   Oversell is neither a Refusal nor a Decline. */
+.banner-oversold {
+  color: var(--amber);
+  background: var(--amber-bg);
+  border-color: var(--amber);
+}
+
 .banner-steps {
   font-family: var(--mono);
   font-size: 0.82rem;
@@ -342,6 +351,12 @@ a {
    says "Gateway declined", keeping the two vocabularies visibly distinct. */
 .event-declined > .event-body {
   border-left-color: var(--refused);
+}
+
+/* An Oversell is amber like an anomaly (a discovered shortfall) but its own
+   class: it *was* acted on — automatically refunded — never left as-was. */
+.event-oversold > .event-body {
+  border-left-color: var(--amber);
 }
 
 .event-head {
@@ -427,6 +442,16 @@ a {
 }
 
 .verdict-anomaly .verdict-label {
+  color: var(--amber);
+}
+
+.verdict-oversold {
+  border-left-color: var(--amber);
+  background: var(--amber-bg);
+  padding: 0.45rem 0.75rem;
+}
+
+.verdict-oversold .verdict-label {
   color: var(--amber);
 }
 

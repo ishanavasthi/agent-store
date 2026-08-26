@@ -5,9 +5,11 @@ import { parseRazorpayWebhook, verifyRazorpaySignature } from './razorpayWebhook
 import {
   GatewayError,
   type CreatePaymentLinkParams,
+  type GatewayRefund,
   type GatewayWebhookEvent,
   type PaymentGateway,
   type PaymentLink,
+  type RefundPaymentParams,
 } from './types.js';
 
 export interface RazorpayGatewayOptions {
@@ -98,6 +100,49 @@ export class RazorpayGateway implements PaymentGateway {
         description: detail?.description ?? String(error),
       });
       throw new GatewayError('Failed to create Payment Link at Razorpay', error);
+    }
+  }
+
+  /**
+   * The real refund call (T9's Oversell path). Test-mode trap §5.5: the refund
+   * API works only against **captured** payments — the caller guarantees that
+   * by construction, because an Oversell begins at a capture. The refund is
+   * then visible in the Razorpay test dashboard under Payments → Refunds,
+   * which is the acceptance check for the real-rails run of failure 2.
+   */
+  async refundPayment(params: RefundPaymentParams): Promise<GatewayRefund> {
+    try {
+      const refund = await this.#client.payments.refund(params.gatewayPaymentId, {
+        amount: params.amountPaise,
+        speed: 'normal',
+        notes: { ...params.notes },
+      });
+
+      const refundId = (refund as { id?: unknown }).id;
+      if (typeof refundId !== 'string' || refundId === '') {
+        // A refund object with no id cannot be bound into a refund receipt —
+        // treat the response as a failure rather than signing a blank binding.
+        throw new GatewayError('Razorpay returned a refund with no id');
+      }
+      return {
+        gatewayRefundId: refundId,
+        amountPaise: paise(Number(refund.amount ?? params.amountPaise)),
+        status: String((refund as { status?: unknown }).status ?? 'unknown'),
+      };
+    } catch (error) {
+      if (error instanceof GatewayError) throw error;
+      // Same surfacing rule as createPaymentLink: Razorpay's useful part nests
+      // under `error.error.description` and would otherwise be invisible.
+      const detail = (error as { error?: { description?: unknown; code?: unknown } }).error;
+      console.error('[agent-store] Razorpay rejected the refund', {
+        gatewayPaymentId: params.gatewayPaymentId,
+        code: detail?.code ?? null,
+        description: detail?.description ?? String(error),
+      });
+      throw new GatewayError(
+        `Failed to refund payment ${params.gatewayPaymentId} at Razorpay`,
+        error,
+      );
     }
   }
 

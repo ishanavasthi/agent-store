@@ -25,6 +25,7 @@
     "spike:extraction": "npm run build && node dist/ingestion/spike/runExtractionSpike.js",
     "evals:live": "npm run build:server && node dist/evals/live/cli.js",
     "failure:decline": "npm run build:server && node dist/failures/declineRehearsal.js",
+    "failure:oversell": "npm run build:server && node dist/failures/oversellRehearsal.js",
     "db:migrate:prod": "node dist/db/migrate.js",
     "db:seed:prod": "node dist/db/seed.js"
   },
