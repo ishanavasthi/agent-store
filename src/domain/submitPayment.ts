@@ -420,6 +420,10 @@ export async function submitPayment(
           cartHash: cartRow.hash,
           paymentHash,
           amountPaise: totalPaise,
+          // T15: the buyer-minted key on the ledger, so the rule-auditor can
+          // assert "no duplicate charge per idempotency key" from the audit
+          // log alone (PLAN §6) — without it the key lives only in app state.
+          idempotencyKey: request.idempotencyKey,
         },
       });
       await appendAuditEvent(tx, {
