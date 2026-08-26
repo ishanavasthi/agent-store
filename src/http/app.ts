@@ -22,6 +22,12 @@ import {
 } from '../domain/orders.js';
 import { RAZORPAY_SIGNATURE_HEADER, WebhookParseError } from '../gateway/razorpayWebhook.js';
 import { createMcpServer } from '../mcp/server.js';
+import {
+  DISCOVERY_PATH,
+  REST_BASE_PATH,
+  createRestRouter,
+  discoveryDocument,
+} from './restFace.js';
 
 /** Each `GET /audit` directory list is capped here; the log itself is unbounded. */
 const AUDIT_DIRECTORY_LIMIT = 50;
@@ -134,6 +140,17 @@ export function createApp(deps: StorefrontDeps): Express {
   };
   app.get('/mcp', noSession);
   app.delete('/mcp', noSession);
+
+  // ---------------------------------------------------------------------------
+  // REST — the ACP-flavored second face (T14). Same core, same Refusals, same
+  // Receipts; only the transport differs. The discovery doc is how an agent
+  // landing on the bare domain finds either door.
+  // ---------------------------------------------------------------------------
+  app.use(REST_BASE_PATH, createRestRouter(deps));
+
+  app.get(DISCOVERY_PATH, (_req: Request, res: Response) => {
+    res.json(discoveryDocument(deps));
+  });
 
   // ---------------------------------------------------------------------------
   // Audit — the whole point of ADR-0003 made visible. The T7 React viewer reads
@@ -257,8 +274,17 @@ export function createApp(deps: StorefrontDeps): Express {
       service: 'agent-store',
       merchant: MERCHANT_NAME,
       mcp: `${deps.publicBaseUrl}/mcp`,
+      rest: `${deps.publicBaseUrl}${REST_BASE_PATH}`,
+      discovery: `${deps.publicBaseUrl}${DISCOVERY_PATH}`,
       endpoints: [
         '/mcp',
+        DISCOVERY_PATH,
+        `${REST_BASE_PATH}/products`,
+        `${REST_BASE_PATH}/agents`,
+        `${REST_BASE_PATH}/intents`,
+        `${REST_BASE_PATH}/carts`,
+        `${REST_BASE_PATH}/payments`,
+        `${REST_BASE_PATH}/orders/:orderId`,
         '/webhooks/razorpay',
         '/audit',
         '/audit/:orderId',

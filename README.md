@@ -20,6 +20,8 @@ real Razorpay test-mode rails:
 | Surface | What it does |
 |---|---|
 | `POST /mcp` | Authless MCP (Streamable HTTP, stateless). Tools: `get_product`, `checkout`, `get_order_status`. |
+| `GET /.well-known/agent-store.json` | Discovery doc describing both protocol faces: the MCP endpoint and the REST base + endpoints. |
+| `/acp/*` | The ACP-flavored REST twin (T14): `GET /acp/products`, `POST /acp/agents`, `POST /acp/intents`, `POST /acp/carts`, `POST /acp/payments`, `GET /acp/orders/:orderId` — the same core and trust layer as MCP, `Authorization: Bearer <agentToken>`. Refusals and Receipts are identical in shape on both faces. |
 | `POST /webhooks/razorpay` | Verifies the Razorpay webhook signature, then flips the domain Order to `paid`. |
 | `GET /audit/:orderId` | The ordered audit event chain for one Order, as JSON. |
 | `GET /payment-callback` | Where Razorpay returns the human's browser after they approve. Cosmetic — the webhook is what marks the Order paid. |
@@ -110,7 +112,10 @@ mean zero money moved.
   enforcement at payment time (the Cap itself is declared and stored at registration since
   T3), idempotency, price-hash pinning, signed Receipts.
 - **T7** — the React audit viewer over `GET /audit/:orderId`.
-- Ingestion (M4), the ACP-flavored REST twin, and `/.well-known` discovery.
+- **T14** — the ACP-flavored REST twin (`/acp/*`) and the `/.well-known/agent-store.json`
+  discovery doc: a second thin face over the same core, Refusals and Receipts identical in
+  shape across both.
+- Ingestion (M4).
 
 ---
 
