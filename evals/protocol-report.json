@@ -1,0 +1,323 @@
+{
+  "startedAt": "2026-08-26T02:16:47.046Z",
+  "scoreboard": {
+    "scenarios": 30,
+    "passed": 30,
+    "failed": 0,
+    "taskSuccessPercent": 100,
+    "auditedViolations": 0,
+    "checkoutLatency": {
+      "p95Ms": 8.1,
+      "samples": 17
+    }
+  },
+  "ruleAuditor": {
+    "eventsExamined": 250,
+    "chargesAudited": 10,
+    "refusalsAudited": 18,
+    "agentsSeen": 30,
+    "violations": []
+  },
+  "results": [
+    {
+      "id": "happy-purchase-mcp",
+      "name": "Happy purchase over MCP: full mandate chain to a verified Receipt",
+      "face": "mcp",
+      "category": "happy path",
+      "expected": "Order paid; merchant-signed Receipt verifies independently",
+      "passed": true,
+      "reason": null,
+      "durationMs": 57.644957999999974
+    },
+    {
+      "id": "happy-purchase-rest",
+      "name": "Happy purchase over REST: same chain, same Receipt, the ACP door",
+      "face": "rest",
+      "category": "happy path",
+      "expected": "Order paid; merchant-signed Receipt verifies independently",
+      "passed": true,
+      "reason": null,
+      "durationMs": 20.65583300000003
+    },
+    {
+      "id": "happy-multi-item-mcp",
+      "name": "Multi-item Cart mandate: two tees and a cap in one immutable cart",
+      "face": "mcp",
+      "category": "happy path",
+      "expected": "Cart totals 3097.00 in integer paise; Order paid with Receipt",
+      "passed": true,
+      "reason": null,
+      "durationMs": 30.20991600000002
+    },
+    {
+      "id": "happy-client-custody-mcp",
+      "name": "Client-custody purchase: the buyer signs every mandate locally",
+      "face": "mcp",
+      "category": "happy path",
+      "expected": "Server never holds the key; locally signed chain reaches paid + Receipt",
+      "passed": true,
+      "reason": null,
+      "durationMs": 25.864166000000296
+    },
+    {
+      "id": "unregistered-agent-mcp",
+      "name": "Unregistered agent over MCP: a commerce call with a bogus token",
+      "face": "mcp",
+      "category": "refusals",
+      "expected": "UNREGISTERED_AGENT Refusal; no mandate ever declared",
+      "passed": true,
+      "reason": null,
+      "durationMs": 5.706541000000016
+    },
+    {
+      "id": "unregistered-agent-rest",
+      "name": "Unregistered agent over REST: bogus bearer token on /acp/intents",
+      "face": "rest",
+      "category": "refusals",
+      "expected": "UNREGISTERED_AGENT Refusal, identical shape to the MCP face",
+      "passed": true,
+      "reason": null,
+      "durationMs": 2.4140830000001188
+    },
+    {
+      "id": "over-budget-mcp",
+      "name": "Over-Budget over MCP: the cart exceeds the Intent it chains to",
+      "face": "mcp",
+      "category": "refusals",
+      "expected": "OVER_BUDGET Refusal at submit_payment, recoverable",
+      "passed": true,
+      "reason": null,
+      "durationMs": 14.527665999999954
+    },
+    {
+      "id": "over-budget-rest",
+      "name": "Over-Budget over REST: same Refusal through the ACP door",
+      "face": "rest",
+      "category": "refusals",
+      "expected": "OVER_BUDGET Refusal at POST /acp/payments, recoverable",
+      "passed": true,
+      "reason": null,
+      "durationMs": 8.870374999999967
+    },
+    {
+      "id": "over-cap-mcp",
+      "name": "Over-Cap over MCP: a second purchase would breach the registration Cap",
+      "face": "mcp",
+      "category": "refusals",
+      "expected": "First purchase paid; second refuses OVER_CAP, not recoverable",
+      "passed": true,
+      "reason": null,
+      "durationMs": 30.616749999999683
+    },
+    {
+      "id": "over-cap-rest",
+      "name": "Over-Cap over REST: a single cart bigger than the declared Cap",
+      "face": "rest",
+      "category": "refusals",
+      "expected": "OVER_CAP Refusal before any gateway contact",
+      "passed": true,
+      "reason": null,
+      "durationMs": 9.897125000000415
+    },
+    {
+      "id": "out-of-stock-mid-cart-mcp",
+      "name": "Out of stock mid-cart: a rival buys the shelf between cart and payment",
+      "face": "mcp",
+      "category": "refusals",
+      "expected": "OUT_OF_STOCK Refusal at submit_payment — nothing was reserved",
+      "passed": true,
+      "reason": null,
+      "durationMs": 32.470666000000165
+    },
+    {
+      "id": "price-change-mcp",
+      "name": "Price change between cart and payment, then recovery at the new price",
+      "face": "mcp",
+      "category": "refusals",
+      "expected": "PRICE_CHANGED Refusal; re-running create_cart recovers",
+      "passed": true,
+      "reason": null,
+      "durationMs": 20.438124999999673
+    },
+    {
+      "id": "price-change-rest",
+      "name": "Price change over REST: the pinned price hash fails closed",
+      "face": "rest",
+      "category": "refusals",
+      "expected": "PRICE_CHANGED Refusal at POST /acp/payments",
+      "passed": true,
+      "reason": null,
+      "durationMs": 8.340916999999536
+    },
+    {
+      "id": "intent-consumed-mcp",
+      "name": "Second purchase on a consumed Intent over MCP (the chain is 1:1:1)",
+      "face": "mcp",
+      "category": "refusals",
+      "expected": "INTENT_CONSUMED Refusal for the second cart under one Intent",
+      "passed": true,
+      "reason": null,
+      "durationMs": 20.674917000000278
+    },
+    {
+      "id": "intent-consumed-rest",
+      "name": "Second purchase on a consumed Intent over REST",
+      "face": "rest",
+      "category": "refusals",
+      "expected": "INTENT_CONSUMED Refusal through the ACP door",
+      "passed": true,
+      "reason": null,
+      "durationMs": 14.254334000000199
+    },
+    {
+      "id": "refusal-parity-both-faces",
+      "name": "Refusal parity: the same policy no is byte-identical on both faces",
+      "face": "both",
+      "category": "refusals",
+      "expected": "OVER_BUDGET Refusal payloads deep-equal across MCP and REST",
+      "passed": true,
+      "reason": null,
+      "durationMs": 20.038416000000325
+    },
+    {
+      "id": "replay-same-cart-mcp",
+      "name": "Replayed Payment mandate over MCP: same key, same cart, one charge",
+      "face": "mcp",
+      "category": "idempotency & replay",
+      "expected": "Retry returns the original Order and link; exactly one payment",
+      "passed": true,
+      "reason": null,
+      "durationMs": 29.430833000000348
+    },
+    {
+      "id": "replay-same-cart-rest",
+      "name": "Replayed Payment mandate over REST: the Idempotency-Key header honored",
+      "face": "rest",
+      "category": "idempotency & replay",
+      "expected": "Retry replays the original result; no second charge",
+      "passed": true,
+      "reason": null,
+      "durationMs": 12.250834000000395
+    },
+    {
+      "id": "idempotency-reuse-mcp",
+      "name": "Reused idempotency key with a different cart over MCP",
+      "face": "mcp",
+      "category": "idempotency & replay",
+      "expected": "IDEMPOTENCY_REUSE Refusal — never answers for a cart the buyer did not submit",
+      "passed": true,
+      "reason": null,
+      "durationMs": 22.34520800000064
+    },
+    {
+      "id": "idempotency-reuse-rest",
+      "name": "Reused idempotency key with a different cart over REST",
+      "face": "rest",
+      "category": "idempotency & replay",
+      "expected": "IDEMPOTENCY_REUSE Refusal through the ACP door",
+      "passed": true,
+      "reason": null,
+      "durationMs": 14.361291999999594
+    },
+    {
+      "id": "malformed-intent-signature-mcp",
+      "name": "Malformed mandate over MCP: an Intent signature over different bytes",
+      "face": "mcp",
+      "category": "invalid mandates",
+      "expected": "INVALID_MANDATE Refusal before the mandate is stored",
+      "passed": true,
+      "reason": null,
+      "durationMs": 8.236958999999842
+    },
+    {
+      "id": "tampered-cart-signature-mcp",
+      "name": "Tampered Cart mandate: the agent signs a cart with an altered total",
+      "face": "mcp",
+      "category": "invalid mandates",
+      "expected": "INVALID_MANDATE Refusal at the trust gate; zero rows persisted",
+      "passed": true,
+      "reason": null,
+      "durationMs": 12.595209000000978
+    },
+    {
+      "id": "malformed-intent-signature-rest",
+      "name": "Malformed mandate over REST: same forged Intent through the ACP door",
+      "face": "rest",
+      "category": "invalid mandates",
+      "expected": "INVALID_MANDATE Refusal, identical shape to the MCP face",
+      "passed": true,
+      "reason": null,
+      "durationMs": 3.8884169999982987
+    },
+    {
+      "id": "unknown-cart-hash-mcp",
+      "name": "Payment against a cart hash that names nothing",
+      "face": "mcp",
+      "category": "invalid mandates",
+      "expected": "CART_NOT_FOUND validation error — a bad reference, never a Refusal",
+      "passed": true,
+      "reason": null,
+      "durationMs": 10.270292000001064
+    },
+    {
+      "id": "ambiguous-query-mcp",
+      "name": "Ambiguous query: the want never resolves to a sellable Variant",
+      "face": "mcp",
+      "category": "validation errors",
+      "expected": "VARIANT_NOT_FOUND validation error at create_cart",
+      "passed": true,
+      "reason": null,
+      "durationMs": 8.85833399999865
+    },
+    {
+      "id": "invalid-cap-rest",
+      "name": "Registration with a Cap of zero paise",
+      "face": "rest",
+      "category": "validation errors",
+      "expected": "INVALID_CAP validation error; no Agent minted",
+      "passed": true,
+      "reason": null,
+      "durationMs": 1.5693330000012793
+    },
+    {
+      "id": "invalid-budget-mcp",
+      "name": "Intent with a non-positive Budget",
+      "face": "mcp",
+      "category": "validation errors",
+      "expected": "INVALID_BUDGET validation error; no Intent mandate declared",
+      "passed": true,
+      "reason": null,
+      "durationMs": 6.9901669999999285
+    },
+    {
+      "id": "decline-retry-fail-closed-mcp",
+      "name": "Decline, bounded retry, fail closed: two gateway declines cancel the Order",
+      "face": "mcp",
+      "category": "gateway failures",
+      "expected": "Order cancelled with a structured Decline; zero charge; no Receipt",
+      "passed": true,
+      "reason": null,
+      "durationMs": 27.009750000001077
+    },
+    {
+      "id": "decline-then-success-mcp",
+      "name": "Decline, then the bounded retry succeeds",
+      "face": "mcp",
+      "category": "gateway failures",
+      "expected": "One decline recorded; the retry captures; Order paid with Receipt",
+      "passed": true,
+      "reason": null,
+      "durationMs": 24.79449999999997
+    },
+    {
+      "id": "oversell-refund-cross-face",
+      "name": "Oversell and automatic refund: two faces race for the last unit",
+      "face": "both",
+      "category": "gateway failures",
+      "expected": "MCP buyer fulfilled; REST buyer auto-refunded with a linked refund receipt",
+      "passed": true,
+      "reason": null,
+      "durationMs": 42.06037499999911
+    }
+  ]
+}

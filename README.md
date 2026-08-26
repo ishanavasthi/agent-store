@@ -54,7 +54,7 @@ unconverted and there is no rounding step to get wrong.
 `Transaction`, not any database handle — writing an audit event outside a transaction is a
 type error, not a code-review finding. Migration `0001` additionally installs triggers that
 refuse `UPDATE` and `DELETE` on `audit_events`, so the log is append-only at the database.
-This is what the T6 rule-auditor's "judged from the audit log alone" claim rests on.
+This is what the rule-auditor's "judged from the audit log alone" claim rests on (T15 — see Scoreboard).
 
 **The gateway sits behind an interface.** `src/gateway/types.ts` defines `PaymentGateway`;
 `razorpayGateway.ts` is the only file in the repo that imports the `razorpay` package. The
@@ -119,6 +119,77 @@ mean zero money moved.
 
 ---
 
+## Scoreboard
+
+Produced by `npm run evals` — the 30-scenario scripted protocol suite plus the
+rule-auditor, in one deterministic, CI-runnable command. The reference run's
+artifacts are committed so no number here has to be taken on trust:
+[`evals/protocol-report.json`](evals/protocol-report.json) (per-scenario results) and
+[`evals/protocol-audit-log.jsonl`](evals/protocol-audit-log.jsonl) — the batch's
+exported `audit_events` rows, the *only* input the auditor reads, re-checkable any
+time with `npm run audit:rules`. Re-running `npm run evals` reproduces all of it:
+
+| Metric | Value | Measured how |
+|---|---|---|
+| Task success (30 scripted protocol scenarios) | **30/30 (100%)** | Scenario runner over both protocol faces (18 MCP, 10 REST, 2 cross-face) against the deterministic gateway stub on embedded Postgres. Every scenario states its expected outcome and fails otherwise. |
+| Audited violations | **0** | The rule-auditor, reading **only the audit log** the batch produced — 250 audit events: 10 charges, 18 refusals, 30 agent registrations. See "The rule-auditor" below. |
+| Extraction accuracy per field | _pending T12 (ingestion pipeline)_ — this row is filled from the T12 accuracy report against the [published hand labels](fixtures/demo-dataset/) once it merges. Interim signal: the [S3 spike](fixtures/extraction-spike/) scored 5/5 name+price exact-match on gpt-5-mini (n=5 — a gate, not a calibrated figure). | gpt-5-mini vs hand labels written before any model ran, both published in this repo. |
+| p95 checkout latency | **8.0 ms** (17 successful `submit_payment` calls) | Wall-clock around each successful `submit_payment`: full mandate-chain verification (4 Ed25519 verifications + hash binding), Cap/Budget/stock/idempotency enforcement, Order + Payment-mandate persistence, payment-link issuance — against the in-process stub, so this is **protocol overhead only** and excludes real Razorpay network time. |
+
+### Methodology — which numbers come from the stub, which from real rails
+
+**From the stub (deterministic):** the 30 scripted scenarios and everything in the
+table above. They run against `StubGateway` (PLAN §5.4) on an embedded PGlite
+Postgres carrying the real committed migrations — no network, no credentials, byte-stable
+across runs, which is what makes the suite CI-runnable and the only way to trigger a
+gateway decline programmatically (test mode has no API-driven payment completion). The
+scenario list covers: happy purchases on both faces (custodial and client-custody
+signing), out-of-stock mid-cart, over-Cap, over-Budget, an ambiguous query that resolves
+to no Variant, price change between cart and payment, a replayed Payment mandate, a
+reused idempotency key with a different cart, a second purchase on a consumed Intent,
+decline + bounded retry + fail-closed, Oversell + automatic refund, malformed/tampered
+mandates, an unregistered agent, refusal-shape parity across the two faces, and
+validation-error cases — run `npm run evals` for the full list with per-scenario results.
+
+**From real rails (non-deterministic, reported separately):** the live suite
+(`npm run evals:live`, [docs/live-evals.md](docs/live-evals.md)) — 3–5 real
+Claude-as-buyer runs against the deployed endpoint on real Razorpay test rails, payment
+approved by a Playwright payer-bot. Those runs are observations, not test cases, and
+their report says so. The S1 spike (PLAN §7) additionally verified two complete
+purchases end-to-end on real test rails.
+
+**Extraction accuracy** is measured against hand labels written before any model ran and
+[published in this repo](fixtures/demo-dataset/) — the graded answers are public, so the
+grading can be checked, not trusted.
+
+### The rule-auditor (`npm run audit:rules`)
+
+A separate script whose **only input is the audit log** — the append-only
+`audit_events` table (exported to `evals/protocol-audit-log.jsonl` by the eval run; the
+database refuses `UPDATE`/`DELETE` on it by trigger). It never reads app state, scenario
+results, or any agent's claims, and it *recomputes* rather than re-reads: replaying the
+log in sequence order it asserts —
+
+1. **No charge above Cap** — every charge is attributed to its Agent through the logged
+   verification event, and the running captured-minus-refunded total per Agent never
+   exceeds the Cap that Agent's registration event declared.
+2. **No charge without a complete verified mandate chain** — every charge traces back
+   through hash-linked Intent → Cart → Payment events of the same Agent, the Cart's
+   total re-added from its logged line items, the charged amount consistent across the
+   chain and within the Intent's logged Budget.
+3. **No duplicate charge per idempotency key** — at most one verified Payment mandate
+   and one charge per (Agent, key); a replay must reference a key the log saw verify.
+4. **Every Refusal has a reason code** — each refusal event carries the structured
+   `{code, reason, recoverable}` payload.
+
+An auditor that cannot fail proves nothing, so the test suite feeds it planted
+violations — synthetic bad logs for each assert, plus a *real* exported log tampered
+after the fact (Cap shrunk below a real charge; the verification event deleted) — and
+requires it to catch every one (`src/evals/protocol/ruleAuditor.test.ts`,
+`protocolSuite.integration.test.ts`).
+
+---
+
 ## Running it locally
 
 Requires Node 22 and a Neon Postgres database.
@@ -137,6 +208,8 @@ Checks:
 npm run typecheck   # tsc --noEmit, strict
 npm run build       # tsc -> dist/
 npm test            # vitest: pure helpers plus in-process integration, no network
+npm run evals       # the 30-scenario protocol suite + rule-auditor (see Scoreboard)
+npm run audit:rules # re-audit the last eval batch's exported audit log on its own
 ```
 
 `npm test` covers pure helpers (paise arithmetic and formatting, audit event ordering, the
@@ -144,8 +217,8 @@ Refusal/validation-error split, webhook signature verification and payload parsi
 id/reference handling) and the in-process purchase proof, which runs against the stub gateway
 and an embedded PGlite Postgres. No credentials, no external service — PGlite is a
 devDependency and `tsconfig.build.json` excludes `src/testSupport/`, so it never reaches
-`dist/`. Everything else with a seam cost is tested at the protocol surface by the T6 eval
-harness rather than mocked here — see `PLAN.md` §6.
+`dist/`. Everything else with a seam cost is tested at the protocol surface by the T15 eval
+harness rather than mocked here — see `PLAN.md` §6 and the Scoreboard above.
 
 ### Environment variables
 
