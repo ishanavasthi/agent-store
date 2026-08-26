@@ -8,6 +8,49 @@ Each entry is **Symptom → Cause → Fix → Lesson**. The Cause is the mechani
 
 ---
 
+## 2026-08-26 — T16 live-eval harness
+
+### The hosted payment-link page cannot be scripted from documentation
+
+**Symptom** — the Playwright payer-bot (PLAN §6) needs selectors for Razorpay's
+hosted Payment Link page, and PLAN §7 lists those mechanics as a detail-level
+unknown. Research did not close it: no Razorpay doc describes the hosted page's
+DOM, and the docs are not even internally consistent about the flow — the
+Payment Links API docs say UPI payment links are unsupported in test mode,
+while the S1 spike (2026-08-24) completed two real test-mode purchases by
+approving exactly such links with `success@razorpay` in the hosted checkout.
+The resolution: "UPI Payment Link" is a distinct *link type* (`upi_link:
+true`); an ordinary link's hosted page embeds standard checkout, whose
+test-mode UPI flow accepts the magic VPAs (`success@razorpay` /
+`failure@razorpay`, per razorpay.com/docs/payments/payments/test-upi-details).
+What no source states: the page's DOM structure, whether checkout mounts in an
+`iframe.razorpay-checkout-frame` or inline on the link page, or what the
+post-submit screen shows in test mode.
+
+**Cause** — the hosted page is Razorpay's, unversioned, A/B-tested, and only
+rendered by real link URLs; there is no sandbox to rehearse against without
+creating real test-mode links, which the harness build deliberately did not do
+(real runs are human-triggered — Max quota + rails).
+
+**Fix** — design for the uncertainty instead of guessing one selector set:
+every payer-bot step walks a *list of candidate locators* across every
+checkout-ish frame plus the main frame, records which candidate matched (or
+that the step was skipped) into a step log that lands in the run evidence
+JSON, and optional steps (contact screen, on-page confirmation) never fail the
+run. The authoritative success signal is never the page: it is the runner's
+`get_order_status` polling, i.e. the webhook flipping the Order to paid — the
+same signal the S1 spike verified. `--dry-run` stops before any browser
+exists, so CI can exercise everything up to the consent step.
+
+**Lesson** — when a third party's UI is the only interface and its structure is
+unknowable offline, make the automation report what it saw rather than assert
+what should be there, and anchor success on your own system's state, not the
+foreign page's pixels. The first human-triggered run turns the candidate lists
+into facts; the step log is what makes that tuning a diff instead of a
+debugging session.
+
+---
+
 ## 2026-08-26 — T10 extraction spike
 
 ### Every `node --experimental-strip-types src/…` script dies on its first import
