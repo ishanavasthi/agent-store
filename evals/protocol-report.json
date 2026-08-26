@@ -1,5 +1,5 @@
 {
-  "startedAt": "2026-08-26T02:16:47.046Z",
+  "startedAt": "2026-08-26T02:21:22.211Z",
   "scoreboard": {
     "scenarios": 30,
     "passed": 30,
@@ -7,7 +7,7 @@
     "taskSuccessPercent": 100,
     "auditedViolations": 0,
     "checkoutLatency": {
-      "p95Ms": 8.1,
+      "p95Ms": 111.6,
       "samples": 17
     }
   },
@@ -27,7 +27,7 @@
       "expected": "Order paid; merchant-signed Receipt verifies independently",
       "passed": true,
       "reason": null,
-      "durationMs": 57.644957999999974
+      "durationMs": 83.54362499999979
     },
     {
       "id": "happy-purchase-rest",
@@ -37,7 +37,7 @@
       "expected": "Order paid; merchant-signed Receipt verifies independently",
       "passed": true,
       "reason": null,
-      "durationMs": 20.65583300000003
+      "durationMs": 29.056209000000308
     },
     {
       "id": "happy-multi-item-mcp",
@@ -47,7 +47,7 @@
       "expected": "Cart totals 3097.00 in integer paise; Order paid with Receipt",
       "passed": true,
       "reason": null,
-      "durationMs": 30.20991600000002
+      "durationMs": 43.34129099999973
     },
     {
       "id": "happy-client-custody-mcp",
@@ -57,7 +57,7 @@
       "expected": "Server never holds the key; locally signed chain reaches paid + Receipt",
       "passed": true,
       "reason": null,
-      "durationMs": 25.864166000000296
+      "durationMs": 37.95008299999972
     },
     {
       "id": "unregistered-agent-mcp",
@@ -67,7 +67,7 @@
       "expected": "UNREGISTERED_AGENT Refusal; no mandate ever declared",
       "passed": true,
       "reason": null,
-      "durationMs": 5.706541000000016
+      "durationMs": 10.118417000000136
     },
     {
       "id": "unregistered-agent-rest",
@@ -77,7 +77,7 @@
       "expected": "UNREGISTERED_AGENT Refusal, identical shape to the MCP face",
       "passed": true,
       "reason": null,
-      "durationMs": 2.4140830000001188
+      "durationMs": 3.115082999999686
     },
     {
       "id": "over-budget-mcp",
@@ -87,7 +87,7 @@
       "expected": "OVER_BUDGET Refusal at submit_payment, recoverable",
       "passed": true,
       "reason": null,
-      "durationMs": 14.527665999999954
+      "durationMs": 23.866791000000376
     },
     {
       "id": "over-budget-rest",
@@ -97,7 +97,7 @@
       "expected": "OVER_BUDGET Refusal at POST /acp/payments, recoverable",
       "passed": true,
       "reason": null,
-      "durationMs": 8.870374999999967
+      "durationMs": 10.009500000000116
     },
     {
       "id": "over-cap-mcp",
@@ -107,7 +107,7 @@
       "expected": "First purchase paid; second refuses OVER_CAP, not recoverable",
       "passed": true,
       "reason": null,
-      "durationMs": 30.616749999999683
+      "durationMs": 33.294167000000016
     },
     {
       "id": "over-cap-rest",
@@ -117,7 +117,7 @@
       "expected": "OVER_CAP Refusal before any gateway contact",
       "passed": true,
       "reason": null,
-      "durationMs": 9.897125000000415
+      "durationMs": 9.693041999999878
     },
     {
       "id": "out-of-stock-mid-cart-mcp",
@@ -127,7 +127,7 @@
       "expected": "OUT_OF_STOCK Refusal at submit_payment — nothing was reserved",
       "passed": true,
       "reason": null,
-      "durationMs": 32.470666000000165
+      "durationMs": 34.433624999999665
     },
     {
       "id": "price-change-mcp",
@@ -137,7 +137,7 @@
       "expected": "PRICE_CHANGED Refusal; re-running create_cart recovers",
       "passed": true,
       "reason": null,
-      "durationMs": 20.438124999999673
+      "durationMs": 21.9678329999997
     },
     {
       "id": "price-change-rest",
@@ -147,7 +147,7 @@
       "expected": "PRICE_CHANGED Refusal at POST /acp/payments",
       "passed": true,
       "reason": null,
-      "durationMs": 8.340916999999536
+      "durationMs": 42.161833999999544
     },
     {
       "id": "intent-consumed-mcp",
@@ -157,7 +157,7 @@
       "expected": "INTENT_CONSUMED Refusal for the second cart under one Intent",
       "passed": true,
       "reason": null,
-      "durationMs": 20.674917000000278
+      "durationMs": 167.99524999999994
     },
     {
       "id": "intent-consumed-rest",
@@ -167,7 +167,7 @@
       "expected": "INTENT_CONSUMED Refusal through the ACP door",
       "passed": true,
       "reason": null,
-      "durationMs": 14.254334000000199
+      "durationMs": 97.71295800000007
     },
     {
       "id": "refusal-parity-both-faces",
@@ -177,7 +177,7 @@
       "expected": "OVER_BUDGET Refusal payloads deep-equal across MCP and REST",
       "passed": true,
       "reason": null,
-      "durationMs": 20.038416000000325
+      "durationMs": 163.48112500000207
     },
     {
       "id": "replay-same-cart-mcp",
@@ -187,7 +187,7 @@
       "expected": "Retry returns the original Order and link; exactly one payment",
       "passed": true,
       "reason": null,
-      "durationMs": 29.430833000000348
+      "durationMs": 149.60091599999942
     },
     {
       "id": "replay-same-cart-rest",
@@ -197,7 +197,7 @@
       "expected": "Retry replays the original result; no second charge",
       "passed": true,
       "reason": null,
-      "durationMs": 12.250834000000395
+      "durationMs": 52.53479100000186
     },
     {
       "id": "idempotency-reuse-mcp",
@@ -207,7 +207,7 @@
       "expected": "IDEMPOTENCY_REUSE Refusal — never answers for a cart the buyer did not submit",
       "passed": true,
       "reason": null,
-      "durationMs": 22.34520800000064
+      "durationMs": 235.26737499999945
     },
     {
       "id": "idempotency-reuse-rest",
@@ -217,7 +217,7 @@
       "expected": "IDEMPOTENCY_REUSE Refusal through the ACP door",
       "passed": true,
       "reason": null,
-      "durationMs": 14.361291999999594
+      "durationMs": 94.02287500000239
     },
     {
       "id": "malformed-intent-signature-mcp",
@@ -227,7 +227,7 @@
       "expected": "INVALID_MANDATE Refusal before the mandate is stored",
       "passed": true,
       "reason": null,
-      "durationMs": 8.236958999999842
+      "durationMs": 25.39025000000038
     },
     {
       "id": "tampered-cart-signature-mcp",
@@ -237,7 +237,7 @@
       "expected": "INVALID_MANDATE Refusal at the trust gate; zero rows persisted",
       "passed": true,
       "reason": null,
-      "durationMs": 12.595209000000978
+      "durationMs": 16.019499999998516
     },
     {
       "id": "malformed-intent-signature-rest",
@@ -247,7 +247,7 @@
       "expected": "INVALID_MANDATE Refusal, identical shape to the MCP face",
       "passed": true,
       "reason": null,
-      "durationMs": 3.8884169999982987
+      "durationMs": 4.944583000000421
     },
     {
       "id": "unknown-cart-hash-mcp",
@@ -257,7 +257,7 @@
       "expected": "CART_NOT_FOUND validation error — a bad reference, never a Refusal",
       "passed": true,
       "reason": null,
-      "durationMs": 10.270292000001064
+      "durationMs": 9.121040999998513
     },
     {
       "id": "ambiguous-query-mcp",
@@ -267,7 +267,7 @@
       "expected": "VARIANT_NOT_FOUND validation error at create_cart",
       "passed": true,
       "reason": null,
-      "durationMs": 8.85833399999865
+      "durationMs": 11.956625000002532
     },
     {
       "id": "invalid-cap-rest",
@@ -277,7 +277,7 @@
       "expected": "INVALID_CAP validation error; no Agent minted",
       "passed": true,
       "reason": null,
-      "durationMs": 1.5693330000012793
+      "durationMs": 1.7696670000004815
     },
     {
       "id": "invalid-budget-mcp",
@@ -287,7 +287,7 @@
       "expected": "INVALID_BUDGET validation error; no Intent mandate declared",
       "passed": true,
       "reason": null,
-      "durationMs": 6.9901669999999285
+      "durationMs": 9.075415999999677
     },
     {
       "id": "decline-retry-fail-closed-mcp",
@@ -297,7 +297,7 @@
       "expected": "Order cancelled with a structured Decline; zero charge; no Receipt",
       "passed": true,
       "reason": null,
-      "durationMs": 27.009750000001077
+      "durationMs": 27.45916700000089
     },
     {
       "id": "decline-then-success-mcp",
@@ -307,7 +307,7 @@
       "expected": "One decline recorded; the retry captures; Order paid with Receipt",
       "passed": true,
       "reason": null,
-      "durationMs": 24.79449999999997
+      "durationMs": 28.048291999999492
     },
     {
       "id": "oversell-refund-cross-face",
@@ -317,7 +317,7 @@
       "expected": "MCP buyer fulfilled; REST buyer auto-refunded with a linked refund receipt",
       "passed": true,
       "reason": null,
-      "durationMs": 42.06037499999911
+      "durationMs": 42.58645800000522
     }
   ]
 }
