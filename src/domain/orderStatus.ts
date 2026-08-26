@@ -1,7 +1,12 @@
 import type { StorefrontDeps } from '../deps.js';
 import { findPublishedVariant } from './catalog.js';
 import { findOrderById, listOrderItems, toOrderStatusView, type OrderStatusView } from './orders.js';
-import { findOrderReceipt, type OrderReceiptView } from './receipts.js';
+import {
+  findOrderReceipt,
+  findOrderRefundReceipt,
+  type OrderReceiptView,
+  type OrderRefundReceiptView,
+} from './receipts.js';
 import type { OrderItemView } from './orders.js';
 import { ValidationError } from './refusal.js';
 
@@ -15,8 +20,14 @@ export interface OrderStatusBody extends OrderStatusView {
   readonly items: readonly OrderItemView[];
   /** Legacy single-variant Orders only; mandate-backed Orders carry `items`. */
   readonly product: string | null;
-  /** Present exactly when status is `paid` on a mandate-backed Order. */
+  /**
+   * Present when status is `paid` or `refunded` on a mandate-backed Order — a
+   * refunded Order keeps its Receipt: the charge really happened, and the
+   * refund receipt references it by hash.
+   */
   readonly receipt: OrderReceiptView | null;
+  /** Present exactly when status is `refunded` (T9's Oversell path). */
+  readonly refundReceipt: OrderRefundReceiptView | null;
   readonly auditUrl: string;
 }
 
@@ -36,15 +47,22 @@ export async function readOrderStatus(
     row.variantId === null
       ? null
       : await findPublishedVariant(deps.db, deps.merchantId, row.variantId);
-  // The Receipt is minted by the paid webhook, so it appears exactly when
-  // the status flips to paid — and only for mandate-backed Orders.
+  // The Receipt is minted by the paid webhook, so it appears exactly when the
+  // status flips to paid — and only for mandate-backed Orders. A refunded
+  // Order keeps serving it: the refund receipt references it by hash, and a
+  // buyer holding only one of the pair could verify nothing.
   const receipt =
-    row.status === 'paid' ? await findOrderReceipt(deps.db, deps.merchantId, row.id) : null;
+    row.status === 'paid' || row.status === 'refunded'
+      ? await findOrderReceipt(deps.db, deps.merchantId, row.id)
+      : null;
+  const refundReceipt =
+    row.status === 'refunded' ? await findOrderRefundReceipt(deps.db, deps.merchantId, row.id) : null;
   return {
     ...toOrderStatusView(row),
     items,
     product: variant?.productTitle ?? null,
     receipt,
+    refundReceipt,
     auditUrl: `${deps.publicBaseUrl}/audit/${row.id}`,
   };
 }

@@ -20,6 +20,7 @@ import {
   listRecentOrders,
   toOrderStatusView,
 } from '../domain/orders.js';
+import { refundOversoldOrder } from '../domain/oversell.js';
 import { RAZORPAY_SIGNATURE_HEADER, WebhookParseError } from '../gateway/razorpayWebhook.js';
 import { createMcpServer } from '../mcp/server.js';
 import {
@@ -95,9 +96,24 @@ export function createApp(deps: StorefrontDeps): Express {
 
       const outcome = await applyGatewayWebhook(deps.db, deps.merchantId, event, deps.gateway.name);
 
+      // The Oversell's refund is *automatic* (PLAN §5.6 failure 2): it runs
+      // here, on the same delivery that detected the shortfall — after the
+      // detection transaction committed, because the refund is an external
+      // gateway call. A refund failure still answers 200: the anomaly is on
+      // the ledger, and Razorpay redelivering the capture would fix nothing.
+      const refund =
+        outcome.result === 'oversell_detected'
+          ? await refundOversoldOrder(deps, outcome.orderId)
+          : null;
+
       // Always 200 on a verified event, including `unmatched` and `anomaly`: a
       // non-2xx makes Razorpay redeliver, and redelivery fixes neither.
-      res.status(200).json({ received: true, gatewayEvent: event.rawEvent, ...outcome });
+      res.status(200).json({
+        received: true,
+        gatewayEvent: event.rawEvent,
+        ...outcome,
+        ...(refund === null ? {} : { refund: refund.result }),
+      });
     },
   );
 

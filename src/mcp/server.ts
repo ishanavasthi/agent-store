@@ -96,7 +96,11 @@ export function createMcpServer(deps: StorefrontDeps): McpServer {
         `exactly this charge. If the gateway declines the payment, the human may ` +
         `retry the same link once; a second decline cancels the Order with zero ` +
         `charge and get_order_status reports status "cancelled" with a structured ` +
-        `"decline" explaining why.`,
+        `"decline" explaining why. If stock runs out between verification and ` +
+        `fulfilment (nothing is reserved for you), the captured payment is ` +
+        `automatically refunded in full and get_order_status reports status ` +
+        `"refunded" with a structured "oversell" explaining why, plus a ` +
+        `merchant-signed refund receipt referencing the original Receipt.`,
     },
   );
 
@@ -386,7 +390,12 @@ export function createMcpServer(deps: StorefrontDeps): McpServer {
         'the payment and its one bounded retry, so the order failed closed with zero ' +
         'charge — the response then carries a structured `decline` (a gateway Decline, ' +
         'not a trust-layer refusal); buy again by starting a new purchase with a fresh ' +
-        'Intent. Requires the agentToken from register_agent.',
+        'Intent. `refunded` means the fulfilment-time stock re-check found an Oversell ' +
+        'after your payment was captured, and the full amount was automatically ' +
+        'refunded — the response then carries a structured `oversell` (neither a ' +
+        'Refusal nor a Decline) plus a merchant-signed `refundReceipt` whose ' +
+        'receiptHash references the original Receipt. ' +
+        'Requires the agentToken from register_agent.',
       inputSchema: {
         agentToken: z
           .string()

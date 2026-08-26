@@ -13,9 +13,11 @@ import { displayPaise } from './money';
 /**
  * `declined` is deliberately its own verdict, not `refused`: a Decline is the
  * gateway saying no after the trust layer said yes, and the viewer must never
- * dress one in the other's stamp (CONTEXT.md → Failure vocabulary).
+ * dress one in the other's stamp (CONTEXT.md → Failure vocabulary). `oversold`
+ * (T9) is its own verdict for the same reason — an Oversell is money having
+ * moved and been sent back, which is neither of the other two no's.
  */
-export type Verdict = 'allowed' | 'refused' | 'declined' | 'anomaly' | 'note';
+export type Verdict = 'allowed' | 'refused' | 'declined' | 'oversold' | 'anomaly' | 'note';
 
 export interface Explanation {
   readonly verdict: Verdict;
@@ -228,6 +230,80 @@ export function explainEvent(type: string, payload: Record<string, unknown>): Ex
         detail:
           'The buyer was told this exact structured reason as a Decline — never a Refusal — ' +
           'and a fresh Intent is how a new purchase starts.',
+      };
+    }
+
+    case 'order.fulfilled':
+      return {
+        verdict: 'allowed',
+        label: 'Why allowed',
+        line:
+          `The fulfilment-time stock re-check passed: every line decremented atomically ` +
+          `(UPDATE … WHERE stock ≥ qty) in the same transaction as the paid transition — ` +
+          `no reservation was ever held, and none was needed.`,
+      };
+
+    case 'order.oversell_detected': {
+      const shortfalls = Array.isArray(payload['shortfalls']) ? payload['shortfalls'] : [];
+      const named = shortfalls
+        .map((raw) => {
+          if (typeof raw !== 'object' || raw === null) return null;
+          const line = raw as Record<string, unknown>;
+          const title = typeof line['productTitle'] === 'string' ? line['productTitle'] : null;
+          const requested = typeof line['requested'] === 'number' ? line['requested'] : null;
+          const available = typeof line['available'] === 'number' ? line['available'] : null;
+          return title === null || requested === null || available === null
+            ? null
+            : `${title}: ${requested} requested, ${available} left`;
+        })
+        .filter((line): line is string => line !== null)
+        .join('; ');
+      return {
+        verdict: 'oversold',
+        label: 'Oversell',
+        line:
+          `The payment was captured, but the fulfilment-time re-check found the stock ` +
+          `short${named === '' ? '' : ` (${named})`} — the deliberate risk of holding no ` +
+          `reservations between verification and fulfilment.`,
+        detail:
+          'Nothing was fulfilled: any lines already decremented were restored in this ' +
+          'same transaction, and the automatic refund follows.',
+      };
+    }
+
+    case 'gateway.refund_attempted':
+      return {
+        verdict: 'note',
+        label: '',
+        line:
+          `Recorded before the gateway's refund API was called, for ${money(payload, 'amountPaise')} — ` +
+          `the same crash-trace discipline as the payment link: an attempt with no outcome is a fact, not a gap.`,
+      };
+
+    case 'order.refunded': {
+      const refundId = str(payload, 'gatewayRefundId');
+      return {
+        verdict: 'oversold',
+        label: 'Why refunded',
+        line:
+          `The Oversell's automatic refund completed: the gateway reversed ` +
+          `${money(payload, 'amountPaise')}${refundId === null ? '' : ` (refund ${refundId})`} ` +
+          `and the Order moved paid → refunded.`,
+        detail:
+          'The buyer was told this exact structured reason as an Oversell — neither a ' +
+          'Refusal nor a Decline — and a fresh Intent is how a new purchase starts once stock returns.',
+      };
+    }
+
+    case 'receipt.refund_issued': {
+      const original = str(payload, 'receiptHash');
+      return {
+        verdict: 'allowed',
+        label: 'Proof issued',
+        line:
+          `The Merchant signed a refund receipt for ${money(payload, 'amountPaise')}, binding the ` +
+          `gateway refund to the original Receipt by hash` +
+          `${original === null ? '' : ` (${original.slice(0, 12)}…)`} — charge and reversal are now attestable as a pair.`,
       };
     }
 

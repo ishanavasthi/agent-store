@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, isNull, notInArray, sql, type SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, isNull, notInArray, sql, type SQL } from 'drizzle-orm';
 import type { Database, Executor, Transaction } from '../db/client.js';
 import {
   orderItems,
@@ -18,6 +18,12 @@ import {
   type DeclinePayload,
 } from './decline.js';
 import { moneyView, paise, type MoneyView } from './money.js';
+import {
+  parseOversellPayload,
+  type OversellPayload,
+  type OversellShortfallLine,
+  type StoredOversellShortfall,
+} from './oversell.js';
 import { mintReceiptForPaidOrder } from './receipts.js';
 
 /** The statuses a payment attempt (success or failure) can still act on. */
@@ -121,12 +127,20 @@ export interface OrderStatusView {
   readonly createdAt: string;
   readonly paidAt: string | null;
   readonly cancelledAt: string | null;
+  readonly refundedAt: string | null;
   /**
    * The structured reason a fail-closed cancellation stored (T8). A Decline —
    * the gateway's no, after the trust layer's yes — never a Refusal, and the
    * wire shape keeps them distinct (`kind: 'decline'`, no `recoverable`).
    */
   readonly decline: DeclinePayload | null;
+  /**
+   * The structured reason a refunded Order stored (T9). An Oversell — a
+   * fulfilment-time stock shortfall discovered after capture, automatically
+   * refunded — never a Refusal and never a Decline, and the wire shape keeps
+   * all three distinct (`kind: 'oversell'`, no `recoverable`, no `attempts`).
+   */
+  readonly oversell: OversellPayload | null;
 }
 
 export function toOrderStatusView(row: OrderRow): OrderStatusView {
@@ -142,7 +156,9 @@ export function toOrderStatusView(row: OrderRow): OrderStatusView {
     createdAt: row.createdAt.toISOString(),
     paidAt: row.paidAt === null ? null : row.paidAt.toISOString(),
     cancelledAt: row.cancelledAt === null ? null : row.cancelledAt.toISOString(),
+    refundedAt: row.refundedAt === null ? null : row.refundedAt.toISOString(),
     decline: parseDeclinePayload(row.cancellationReason),
+    oversell: parseOversellPayload(row.refundReason),
   };
 }
 
@@ -192,6 +208,16 @@ export type WebhookOutcome =
       readonly result: 'order_cancelled';
       readonly orderId: string;
       readonly decline: DeclinePayload;
+    }
+  /**
+   * T9: the capture stood and the Order is paid, but the fulfilment-time stock
+   * re-check came up short — the caller must now run the automatic refund
+   * (`refundOversoldOrder`); the shortfall is already stored on the Order row.
+   */
+  | {
+      readonly result: 'oversell_detected';
+      readonly orderId: string;
+      readonly shortfalls: readonly OversellShortfallLine[];
     }
   | { readonly result: 'anomaly'; readonly orderId: string; readonly reason: AnomalyReason }
   | { readonly result: 'unmatched'; readonly orderId: null };
@@ -346,7 +372,9 @@ export async function applyGatewayWebhook(
     // `paid` is a one-way transition, and since T8 it is also unreachable from
     // `cancelled`: once the Order failed closed and the buyer was told "zero
     // charge", a late capture must surface as a conflict, never as a silent
-    // paid flip. Both guards live in the WHERE clause (the house pattern).
+    // paid flip. Since T9 it is unreachable from `refunded` too: a redelivered
+    // capture must not flip a refunded Order back to paid. All guards live in
+    // the WHERE clause (the house pattern).
     const updated = await tx
       .update(orders)
       .set({
@@ -359,7 +387,7 @@ export async function applyGatewayWebhook(
         and(
           eq(orders.id, order.id),
           eq(orders.merchantId, merchantId),
-          notInArray(orders.status, ['paid', 'cancelled']),
+          notInArray(orders.status, ['paid', 'cancelled', 'refunded']),
         ),
       )
       .returning({ id: orders.id });
@@ -375,7 +403,8 @@ export async function applyGatewayWebhook(
           cancelledAt: current.cancelledAt?.toISOString() ?? null,
         });
       }
-      // Already paid by an earlier delivery of this or a sibling event. No
+      // Already paid by an earlier delivery of this or a sibling event (or
+      // paid and since refunded — the capture is old news either way). No
       // second `order.paid` is written: the transition happened exactly once.
       return { result: 'already_paid', orderId: order.id } as const;
     }
@@ -412,8 +441,152 @@ export async function applyGatewayWebhook(
       gatewayEvent,
     });
 
-    return { result: 'order_paid', orderId: order.id } as const;
+    // Fulfilment: the no-reservation model's second stock check (PLAN §5.2),
+    // in this same transaction — the decrement (or the shortfall that starts
+    // the refund path) commits with the paid transition and its events, and
+    // exactly-once rides the same one-way paid UPDATE the Receipt does.
+    return fulfillPaidOrder(tx, merchantId, order.id, paidAt, gatewayName, gatewayEvent);
   });
+}
+
+/**
+ * Decrement stock for every line of a just-paid Order — the fulfilment-time
+ * re-check the no-reservation model promises (PLAN §5.2, DECISIONS 2026-08-23
+ * "No stock reservations"). Runs inside `applyGatewayWebhook`'s paid
+ * transaction, only on the delivery that won the one-way paid transition.
+ *
+ * Each line is the prescribed atomic conditional update —
+ * `UPDATE … SET stock = stock - qty WHERE stock >= qty` — never a
+ * check-then-write: the decrement *is* the check, so two rival captures
+ * serialise on the row and exactly one wins the last unit. A line whose update
+ * matches no row is the Oversell. An oversold Order fulfils nothing: lines
+ * that had already decremented are restored (same transaction, deterministic),
+ * the shortfall is stored on the Order row for the refund step to read
+ * (ADR-0003: never rebuilt from the log), and `order.oversell_detected` is
+ * appended. The Order stays `paid` — money really moved — until
+ * `refundOversoldOrder` moves it to `refunded`.
+ */
+async function fulfillPaidOrder(
+  tx: Transaction,
+  merchantId: string,
+  orderId: string,
+  paidAt: Date,
+  gatewayName: string,
+  gatewayEvent: string,
+): Promise<WebhookOutcome> {
+  // Line items, with titles for the buyer-facing shortfall report. Legacy
+  // single-variant Orders (pre-T4) carry their one line on the Order row.
+  let lines = await tx
+    .select({
+      variantId: orderItems.variantId,
+      quantity: orderItems.quantity,
+      productTitle: products.title,
+    })
+    .from(orderItems)
+    .innerJoin(variants, eq(orderItems.variantId, variants.id))
+    .innerJoin(products, eq(variants.productId, products.id))
+    .where(eq(orderItems.orderId, orderId))
+    .orderBy(asc(orderItems.variantId));
+  if (lines.length === 0) {
+    const [legacy] = await tx
+      .select({
+        variantId: orders.variantId,
+        quantity: orders.quantity,
+        productTitle: products.title,
+      })
+      .from(orders)
+      .innerJoin(variants, eq(orders.variantId, variants.id))
+      .innerJoin(products, eq(variants.productId, products.id))
+      .where(eq(orders.id, orderId))
+      .limit(1);
+    if (legacy !== undefined && legacy.variantId !== null && legacy.quantity !== null) {
+      lines = [
+        {
+          variantId: legacy.variantId,
+          quantity: legacy.quantity,
+          productTitle: legacy.productTitle,
+        },
+      ];
+    }
+  }
+
+  const decremented: { readonly variantId: string; readonly quantity: number }[] = [];
+  const fulfilled: { variantId: string; quantity: number; remainingStock: number }[] = [];
+  const shortfalls: OversellShortfallLine[] = [];
+
+  for (const line of lines) {
+    const [hit] = await tx
+      .update(variants)
+      .set({ stock: sql`${variants.stock} - ${line.quantity}` })
+      .where(and(eq(variants.id, line.variantId), gte(variants.stock, line.quantity)))
+      .returning({ stock: variants.stock });
+
+    if (hit !== undefined) {
+      decremented.push({ variantId: line.variantId, quantity: line.quantity });
+      fulfilled.push({
+        variantId: line.variantId,
+        quantity: line.quantity,
+        remainingStock: hit.stock,
+      });
+      continue;
+    }
+
+    // The miss IS the detection. Reading the stock afterwards is reporting
+    // detail for the buyer's structured reason, never a guard.
+    const [current] = await tx
+      .select({ stock: variants.stock })
+      .from(variants)
+      .where(eq(variants.id, line.variantId))
+      .limit(1);
+    shortfalls.push({
+      variantId: line.variantId,
+      productTitle: line.productTitle,
+      requested: line.quantity,
+      available: current?.stock ?? 0,
+    });
+  }
+
+  if (shortfalls.length === 0) {
+    await appendAuditEvent(tx, {
+      type: 'order.fulfilled',
+      merchantId,
+      orderId,
+      payload: { gateway: gatewayName, gatewayEvent, lines: fulfilled },
+    });
+    return { result: 'order_paid', orderId } as const;
+  }
+
+  // Oversold: restore the lines that had decremented — an oversold Order
+  // fulfils nothing, and the remaining stock belongs to other buyers.
+  for (const line of decremented) {
+    await tx
+      .update(variants)
+      .set({ stock: sql`${variants.stock} + ${line.quantity}` })
+      .where(eq(variants.id, line.variantId));
+  }
+
+  const stored: StoredOversellShortfall = {
+    detectedAt: paidAt.toISOString(),
+    shortfalls,
+  };
+  await tx
+    .update(orders)
+    .set({ oversellShortfall: stored, updatedAt: paidAt })
+    .where(and(eq(orders.id, orderId), eq(orders.merchantId, merchantId)));
+
+  await appendAuditEvent(tx, {
+    type: 'order.oversell_detected',
+    merchantId,
+    orderId,
+    payload: {
+      gateway: gatewayName,
+      gatewayEvent,
+      shortfalls,
+      detectedAt: paidAt.toISOString(),
+    },
+  });
+
+  return { result: 'oversell_detected', orderId, shortfalls } as const;
 }
 
 /**

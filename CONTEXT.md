@@ -68,7 +68,7 @@ Merchant-signed machine-readable proof that a specific mandate chain led to a sp
 Merchant-signed document referencing the original Receipt, produced when an Oversell refund completes.
 
 **Oversell**:
-A fulfillment-time stock shortfall discovered *after* capture (the deliberate consequence of having no stock reservations) → automatic refund + Refund receipt.
+A fulfillment-time stock shortfall discovered *after* capture (the deliberate consequence of having no stock reservations) → automatic refund + Refund receipt; the Order ends `refunded`, a terminal state. See Failure vocabulary for the full three-way distinction.
 _Avoid_: out-of-stock (that's the pre-payment refusal case)
 
 **Order**:
@@ -107,4 +107,8 @@ _Avoid_: rejection, denial, error (for policy no-s)
 The payment gateway saying no *after* the trust layer said yes. A Decline is never a Refusal. An Order tolerates two distinct declined attempts — the original plus exactly one bounded retry on the same payment link — then **fails closed**: `cancelled`, zero charge, with a structured `DeclinePayload` (`{kind: 'decline', code, reason, attempts, gatewayErrorCode, gatewayErrorDescription}` — deliberately no `recoverable`, so it can never be mistaken for a Refusal) stored on the Order and reported at `get_order_status`. Once cancelled, an Order can never become paid; a late capture is an anomaly.
 _Avoid_: refusal (for gateway failures), payment error
 
-A malformed request (bad input, schema violation) is a plain validation error — neither a Refusal nor a Decline.
+**Oversell** (as a failure):
+Money having *moved* and been automatically sent back — the third member of the vocabulary, confusable with neither sibling: a Refusal is policy saying no before money moves; a Decline is the gateway saying no before money moves; an Oversell begins at a successful capture. Detected by the fulfillment-time atomic conditional stock decrement missing its row (in the same transaction as `order.paid`), it triggers the automatic full refund: the Order ends `refunded` — terminal, never again payable — with a structured `OversellPayload` (`{kind: 'oversell', code: 'OVERSOLD', reason, shortfalls, refund: {amountPaise, gatewayRefundId, refundedAt}}` — deliberately no `recoverable` and no `attempts`, so it can be mistaken for neither a Refusal nor a Decline) stored on the Order and reported at `get_order_status`, alongside the original Receipt and the merchant-signed Refund receipt referencing it by hash.
+_Avoid_: refusal or decline (for post-capture shortfalls), out-of-stock (the pre-payment refusal case), chargeback
+
+A malformed request (bad input, schema violation) is a plain validation error — neither a Refusal, nor a Decline, nor an Oversell.
