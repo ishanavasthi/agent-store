@@ -56,6 +56,14 @@ export function OrderPage() {
                 </dd>
               </div>
             )}
+            {order.cancelledAt === null ? null : (
+              <div>
+                <dt>cancelled</dt>
+                <dd>
+                  <Timestamp iso={order.cancelledAt} />
+                </dd>
+              </div>
+            )}
             {order.gatewayOrderId === null ? null : (
               <div>
                 <dt>gateway order</dt>
@@ -89,6 +97,14 @@ export function OrderPage() {
           <span className="banner-steps">{missingSteps.join(', ')}</span>
         </div>
       )}
+      {order !== null && order.status === 'cancelled' && order.decline !== null ? (
+        <div className="banner banner-declined" role="status">
+          <span className="banner-stamp">Failed closed</span>
+          {typeof order.decline['reason'] === 'string'
+            ? order.decline['reason']
+            : 'The gateway declined the payment and its bounded retry; the Order was cancelled with zero charge.'}
+        </div>
+      ) : null}
       {anomalies > 0 ? (
         <div className="banner banner-anomaly" role="status">
           <span className="banner-stamp">

@@ -287,6 +287,14 @@ a {
   border-color: var(--refused);
 }
 
+/* The fail-closed ruling (T8): red like an anomaly — money-path bad news —
+   but its own class, because a Decline is neither an anomaly nor a Refusal. */
+.banner-declined {
+  color: var(--refused);
+  background: var(--refused-bg);
+  border-color: var(--refused);
+}
+
 .banner-steps {
   font-family: var(--mono);
   font-size: 0.82rem;
@@ -328,6 +336,12 @@ a {
 
 .event-anomaly > .event-body {
   border-left-color: var(--amber);
+}
+
+/* A Decline shares the refusal's alarm color but never its stamp — the label
+   says "Gateway declined", keeping the two vocabularies visibly distinct. */
+.event-declined > .event-body {
+  border-left-color: var(--refused);
 }
 
 .event-head {
@@ -393,6 +407,16 @@ a {
 }
 
 .verdict-refused .verdict-label {
+  color: var(--refused);
+}
+
+.verdict-declined {
+  border-left-color: var(--refused);
+  background: var(--refused-bg);
+  padding: 0.45rem 0.75rem;
+}
+
+.verdict-declined .verdict-label {
   color: var(--refused);
 }
 

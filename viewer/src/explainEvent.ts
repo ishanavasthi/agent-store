@@ -10,7 +10,12 @@
 
 import { displayPaise } from './money';
 
-export type Verdict = 'allowed' | 'refused' | 'anomaly' | 'note';
+/**
+ * `declined` is deliberately its own verdict, not `refused`: a Decline is the
+ * gateway saying no after the trust layer said yes, and the viewer must never
+ * dress one in the other's stamp (CONTEXT.md → Failure vocabulary).
+ */
+export type Verdict = 'allowed' | 'refused' | 'declined' | 'anomaly' | 'note';
 
 export interface Explanation {
   readonly verdict: Verdict;
@@ -29,6 +34,11 @@ const str = (payload: Record<string, unknown>, key: string): string | null => {
 const bool = (payload: Record<string, unknown>, key: string): boolean | null => {
   const value = payload[key];
   return typeof value === 'boolean' ? value : null;
+};
+
+const num = (payload: Record<string, unknown>, key: string): number | null => {
+  const value = payload[key];
+  return typeof value === 'number' ? value : null;
 };
 
 /** "1,29,900 paise (₹1,299.00)" — the paise integer always leads. */
@@ -179,6 +189,47 @@ export function explainEvent(type: string, payload: Record<string, unknown>): Ex
           `The Merchant signed a Receipt binding the Intent, Cart and Payment hashes to the gateway charge ` +
           `for ${money(payload, 'amountPaise')} — the purchase is now attestable end-to-end.`,
       };
+
+    case 'payment.declined': {
+      const attempt = num(payload, 'attempt');
+      const retriesRemaining = num(payload, 'retriesRemaining');
+      const errorCode = str(payload, 'gatewayErrorCode');
+      const detail =
+        retriesRemaining === null
+          ? undefined
+          : retriesRemaining > 0
+            ? `${retriesRemaining} bounded ${retriesRemaining === 1 ? 'retry' : 'retries'} remain on the same payment link.`
+            : 'No retries remain — the next step on this Order is fail-closed cancellation.';
+      return {
+        verdict: 'declined',
+        label: 'Gateway declined',
+        line:
+          `The gateway declined this payment attempt` +
+          `${attempt === null ? '' : ` (attempt ${attempt})`}` +
+          `${errorCode === null ? '' : ` — ${errorCode}`}. ` +
+          `A Decline, not a Refusal: the trust layer had already said yes.`,
+        ...(detail === undefined ? {} : { detail }),
+      };
+    }
+
+    case 'order.cancelled': {
+      const decline =
+        typeof payload['decline'] === 'object' && payload['decline'] !== null
+          ? (payload['decline'] as Record<string, unknown>)
+          : null;
+      const attempts = decline === null ? null : num(decline, 'attempts');
+      return {
+        verdict: 'declined',
+        label: 'Why cancelled',
+        line:
+          `The payment attempt limit was exhausted` +
+          `${attempts === null ? '' : ` — ${attempts} declined attempts, the original plus its one bounded retry`}` +
+          `, so the Order failed closed: cancelled, with zero charge.`,
+        detail:
+          'The buyer was told this exact structured reason as a Decline — never a Refusal — ' +
+          'and a fresh Intent is how a new purchase starts.',
+      };
+    }
 
     case 'payment.replayed':
       return {
