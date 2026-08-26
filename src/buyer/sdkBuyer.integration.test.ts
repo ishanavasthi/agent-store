@@ -200,6 +200,7 @@ describe('the client-custody SDK buyer, through the MCP tools', () => {
       'gateway.order_linked',
       'order.paid',
       'receipt.issued',
+      'order.fulfilled',
       'gateway.webhook_received',
     ]);
     expect(chain[0]!.payload).toMatchObject({ custody: 'client', publicKey: signer.publicKey });

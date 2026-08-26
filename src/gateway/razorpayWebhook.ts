@@ -141,5 +141,10 @@ export function parseRazorpayWebhook(rawBody: string): GatewayWebhookEvent {
     gatewayPaymentLinkId: str(paymentLink, 'id'),
     amountPaise:
       amount(payment, 'amount') ?? amount(paymentLink, 'amount') ?? amount(gatewayOrder, 'amount'),
+    // Razorpay puts the failure detail on the payment entity (`error_code`,
+    // `error_description`). Read leniently: a failure without them is still a
+    // failure, just an unexplained one.
+    gatewayErrorCode: str(payment, 'error_code'),
+    gatewayErrorDescription: str(payment, 'error_description'),
   };
 }

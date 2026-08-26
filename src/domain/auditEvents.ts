@@ -67,6 +67,57 @@ export const AUDIT_EVENT_TYPES = [
    * and before any money moved. Same Refusal payload shape as `agent.refused`.
    */
   'mandate.refused',
+  // T8 — the bounded-retry / fail-closed path (appended, same ALTER TYPE …
+  // ADD VALUE growth rule as T4):
+  /**
+   * The gateway said no *after* the trust layer said yes — a Decline, never a
+   * Refusal (CONTEXT.md → Failure vocabulary). One event per distinct failed
+   * payment attempt; the payload carries the attempt number and how many
+   * bounded retries remain.
+   */
+  'payment.declined',
+  /**
+   * The Order failed closed: the attempt limit (original + one bounded retry)
+   * was exhausted, so the Order is cancelled with a structured Decline as the
+   * reason, zero charge taken. Written in the same transaction as the status
+   * transition (ADR-0003).
+   */
+  'order.cancelled',
+  // T9 — the Oversell / refund path (appended, same ALTER TYPE … ADD VALUE
+  // growth rule as T4):
+  /**
+   * Fulfilment succeeded: every line's stock decremented via the atomic
+   * conditional `UPDATE … SET stock = stock - qty WHERE stock >= qty`, in the
+   * same transaction as `order.paid` (ADR-0003). The no-reservation model's
+   * happy ending — the payload records each line's remaining stock.
+   */
+  'order.fulfilled',
+  /**
+   * Fulfilment found the shortfall the no-reservation model deliberately risks
+   * (PLAN §5.2): a line's conditional decrement matched no row *after* the
+   * capture. Written in the same transaction as `order.paid`; any lines that
+   * had decremented are restored in that transaction too — an oversold Order
+   * fulfils nothing. The automatic refund follows.
+   */
+  'order.oversell_detected',
+  /**
+   * Written *before* the refund API call, exactly as
+   * `gateway.payment_link_attempted` is before the link call — a crash
+   * mid-refund leaves an attempt with no outcome, which is a fact, not a gap.
+   */
+  'gateway.refund_attempted',
+  /**
+   * The Oversell refund completed: the gateway reversed the captured payment
+   * and the Order moved `paid → refunded`, with the structured Oversell reason
+   * stored on the row. Same transaction as the status transition and the
+   * refund receipt (ADR-0003).
+   */
+  'order.refunded',
+  /**
+   * Merchant-signed refund receipt minted, referencing the original Receipt by
+   * hash — in the same transaction as `order.refunded`.
+   */
+  'receipt.refund_issued',
 ] as const;
 
 export type AuditEventType = (typeof AUDIT_EVENT_TYPES)[number];
@@ -135,6 +186,19 @@ export const AUDIT_EVENT_SUMMARIES: Record<AuditEventType, string> = {
     'Same idempotency key and cart hash — the original result was replayed, no second charge',
   'mandate.refused':
     'A locally signed mandate was refused — its signature did not verify against the Agent’s registered key',
+  'payment.declined':
+    'The gateway declined a payment attempt — a Decline, after the trust layer said yes',
+  'order.cancelled':
+    'Order cancelled — the payment attempt limit was exhausted, so it failed closed with zero charge',
+  'order.fulfilled':
+    'Fulfilled — every line’s stock decremented atomically at the fulfilment-time re-check',
+  'order.oversell_detected':
+    'Oversell detected — the fulfilment-time stock re-check came up short after capture; the automatic refund follows',
+  'gateway.refund_attempted': 'About to ask the gateway to refund the captured payment',
+  'order.refunded':
+    'Order refunded — the captured payment was automatically reversed because of the Oversell',
+  'receipt.refund_issued':
+    'Merchant-signed refund receipt issued, referencing the original Receipt by hash',
 };
 
 /**
@@ -163,7 +227,27 @@ export type AnomalyReason =
    * blank binding: the paid transition stands, the Receipt is skipped, and
    * this anomaly says why.
    */
-  | 'missing_gateway_payment_id';
+  | 'missing_gateway_payment_id'
+  /**
+   * A success webhook arrived for an Order already cancelled (T8: the buyer
+   * was told the purchase failed closed with zero charge). The money may have
+   * moved at the gateway *after* we gave up, so this is never silently marked
+   * paid — the Order stays cancelled and the conflict is recorded for a human.
+   */
+  | 'payment_after_cancellation'
+  /**
+   * The gateway refused (or failed) the Oversell refund call, so the Order
+   * stays `paid` with its oversell on record — money is never assumed to have
+   * moved back. A human retriggers or resolves; nothing retries blind.
+   */
+  | 'refund_failed'
+  /**
+   * An oversold Order was refunded but no original Receipt row exists to bind
+   * the refund receipt to (only conceivable for a pre-T4 Order). The refund
+   * stands — the money really moved back — and the missing proof is recorded
+   * rather than signing a refund receipt with a blank reference.
+   */
+  | 'missing_original_receipt';
 
 /**
  * Qualify a gateway's raw event name so it can never collide with one of ours.

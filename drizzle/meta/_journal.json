@@ -47,8 +47,15 @@
     {
       "idx": 6,
       "version": "7",
-      "when": 1787708211179,
-      "tag": "0006_ingestion_confidence",
+      "when": 1787707473994,
+      "tag": "0006_decline_fail_closed",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1787708838373,
+      "tag": "0007_oversell_refund",
       "breakpoints": true
     }
   ]

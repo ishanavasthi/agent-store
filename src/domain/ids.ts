@@ -18,6 +18,9 @@ const PREFIXES = {
   cartMandate: 'cmd',
   paymentMandate: 'pmd',
   receipt: 'rcp',
+  // Deliberately not `rfnd_`: that is Razorpay's prefix for gateway refund ids,
+  // and the two must never be mistaken for one another in a log.
+  refundReceipt: 'rrc',
 } as const;
 
 export type IdKind = keyof typeof PREFIXES;

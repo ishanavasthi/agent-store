@@ -186,9 +186,44 @@ export const orders = pgTable(
     gatewayPaymentLinkId: text('gateway_payment_link_id'),
     paymentLinkUrl: text('payment_link_url'),
 
+    /**
+     * T8: every *distinct* gateway payment id that failed against this Order —
+     * the attempt count for the bounded retry is this array's cardinality, and
+     * membership is what makes a redelivered `payment.failed` free instead of a
+     * second counted attempt. State lives here, on the row, never rebuilt from
+     * the audit log (ADR-0003: the log records, it is not read back as state).
+     */
+    declinedGatewayPaymentIds: text('declined_gateway_payment_ids')
+      .array()
+      .notNull()
+      .default([]),
+    /**
+     * T8: the structured DeclinePayload a fail-closed cancellation stored —
+     * what get_order_status reports to the buyer as a Decline, never a
+     * Refusal. Null unless status is `cancelled`.
+     */
+    cancellationReason: jsonb('cancellation_reason'),
+    /**
+     * T9: the shortfall the fulfilment-time stock re-check found, written in
+     * the same transaction as the paid transition that discovered it — the
+     * refund step reads it from the row, never back out of the audit log
+     * (ADR-0003). Null unless this Order oversold.
+     */
+    oversellShortfall: jsonb('oversell_shortfall'),
+    /**
+     * T9: the structured OversellPayload the refunded transition stored — what
+     * get_order_status reports to the buyer. Neither a Refusal nor a Decline:
+     * `kind: 'oversell'`. Null unless status is `refunded`.
+     */
+    refundReason: jsonb('refund_reason'),
+    /** T9: the gateway's refund object (`rfnd_…`) — qualified like all gateway ids. */
+    gatewayRefundId: text('gateway_refund_id'),
+
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
     paidAt: timestamp('paid_at', { withTimezone: true }),
+    cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
+    refundedAt: timestamp('refunded_at', { withTimezone: true }),
   },
   (table) => [
     index('orders_merchant_idx').on(table.merchantId),
@@ -373,6 +408,38 @@ export const receipts = pgTable(
 );
 
 /**
+ * Merchant-signed proof that an Oversell refund reversed a specific charge
+ * (T9, PLAN §5.2): Order id, the *original Receipt's hash* (the chain link),
+ * refund amount, gateway refund id, timestamp. A separate table rather than a
+ * second row in `receipts` — that table's unique `orderId` index means "one
+ * Receipt per Order", and a refund receipt is a different document with a
+ * different payload shape, not a second Receipt. `orderId` is unique here too:
+ * one full refund per Order, minted exactly once in the same transaction as
+ * `order.refunded`.
+ */
+export const refundReceipts = pgTable(
+  'refund_receipts',
+  {
+    id: text('id').primaryKey(),
+    merchantId: text('merchant_id')
+      .notNull()
+      .references(() => merchants.id),
+    orderId: text('order_id')
+      .notNull()
+      .references(() => orders.id),
+    /** The original Receipt this refund reverses — resolved by row, linked by hash in the payload. */
+    receiptId: text('receipt_id')
+      .notNull()
+      .references(() => receipts.id),
+    payload: jsonb('payload').notNull(),
+    hash: text('hash').notNull(),
+    merchantSignature: text('merchant_signature').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [uniqueIndex('refund_receipts_order_idx').on(table.orderId)],
+);
+
+/**
  * Append-only (ADR-0003). `seq` is the ordering the audit chain is read back in;
  * timestamps are not, because events written in one transaction share a time.
  */
@@ -409,4 +476,5 @@ export type IntentMandateRow = typeof intentMandates.$inferSelect;
 export type CartMandateRow = typeof cartMandates.$inferSelect;
 export type PaymentMandateRow = typeof paymentMandates.$inferSelect;
 export type ReceiptRow = typeof receipts.$inferSelect;
+export type RefundReceiptRow = typeof refundReceipts.$inferSelect;
 export type AuditEventRow = typeof auditEvents.$inferSelect;

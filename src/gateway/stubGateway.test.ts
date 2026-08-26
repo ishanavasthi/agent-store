@@ -73,6 +73,8 @@ describe('StubGateway.completePayment', () => {
       gatewayPaymentId: 'pay_stub_1',
       gatewayPaymentLinkId: 'plink_stub_1',
       amountPaise: 129900,
+      gatewayErrorCode: null,
+      gatewayErrorDescription: null,
     });
 
     const captured = gateway.parseWebhookEvent(hooks[1]!.rawBody);
@@ -110,6 +112,10 @@ describe('StubGateway.failPayment', () => {
     expect(event.rawEvent).toBe('payment.failed');
     expect(event.reference).toBe('ord_0000000000000000000000000000000a');
     expect(event.gatewayPaymentId).toBe('pay_stub_1_fail1');
+    // The gateway's own words survive normalisation — a Decline's structured
+    // reason (T8) is built from these, never invented.
+    expect(event.gatewayErrorCode).toBe('BAD_REQUEST_ERROR');
+    expect(event.gatewayErrorDescription).toBe('Payment failed at the stub gateway');
   });
 
   it('numbers repeated declines so retry-then-fail is scriptable', async () => {

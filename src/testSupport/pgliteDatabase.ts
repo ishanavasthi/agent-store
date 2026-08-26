@@ -9,7 +9,11 @@ import * as schema from '../db/schema.js';
  * An embedded, in-memory Postgres for tests — real SQL, real transactions,
  * the real committed migrations (including 0001's append-only triggers on
  * `audit_events`), zero network. This directory is excluded from
- * `tsconfig.build.json`, so PGlite stays a devDependency.
+ * `tsconfig.build.json`'s entry points, but T8's rehearsal script imports it,
+ * which pulls it into the compiled `dist` anyway. PGlite stays a devDependency
+ * regardless: nothing the *server* runtime loads (`dist/index.js`) reaches this
+ * file — only tests and the on-demand `npm run failure:*` rehearsals do, and
+ * both run where devDependencies are installed.
  */
 
 export interface TestDatabaseHandle {

@@ -105,6 +105,7 @@ describe('in-process purchase against the stub', () => {
       'gateway.order_linked',
       'order.paid',
       'receipt.issued',
+      'order.fulfilled',
       'gateway.webhook_received',
     ]);
     // Namespaced, so the rule-auditor never meets two meanings of one spelling.
@@ -136,6 +137,8 @@ describe('in-process purchase against the stub', () => {
       gatewayPaymentId: null,
       gatewayPaymentLinkId: result.gatewayPaymentLinkId,
       amountPaise: paise(129900),
+      gatewayErrorCode: null,
+      gatewayErrorDescription: null,
     };
     const outcome = await applyGatewayWebhook(deps.db, MERCHANT_ID, event, 'stub');
     expect(outcome).toEqual({ result: 'order_paid', orderId: result.orderId });
@@ -156,13 +159,18 @@ describe('in-process purchase against the stub', () => {
     expect(anomaly.payload).toMatchObject({ reason: 'missing_gateway_payment_id' });
   });
 
-  it('Decline on demand: payment.failed is recorded and the Order never becomes paid', async () => {
+  it('Decline on demand: payment.failed is counted and the Order never becomes paid', async () => {
     await seedCatalog(deps.db, 3);
     const agent = await registeredAgent(deps);
     const result = await placeOrder(deps, agent);
 
     const declined = await deliver(deps, gateway.failPayment(result.gatewayPaymentLinkId)[0]!);
-    expect(declined).toEqual({ result: 'recorded', orderId: result.orderId });
+    expect(declined).toEqual({
+      result: 'decline_recorded',
+      orderId: result.orderId,
+      attempt: 1,
+      retriesRemaining: 1,
+    });
 
     const afterDecline = await findOrderById(deps.db, MERCHANT_ID, result.orderId);
     expect(afterDecline?.status).toBe('awaiting_payment');
@@ -182,26 +190,30 @@ describe('in-process purchase against the stub', () => {
     const a = await placeOrder(deps, agent);
     const b = await placeOrder(deps, agent);
 
-    for (const r of [a, b]) {
-      const outcome = await deliver(deps, gateway.completePayment(r.gatewayPaymentLinkId)[0]!);
-      expect(outcome).toEqual({ result: 'order_paid', orderId: r.orderId });
-    }
+    // The first capture wins the unit at the fulfilment-time re-check (T9);
+    // the second finds it gone — the Oversell, manufactured deterministically.
+    const first = await deliver(deps, gateway.completePayment(a.gatewayPaymentLinkId)[0]!);
+    expect(first).toEqual({ result: 'order_paid', orderId: a.orderId });
+    const second = await deliver(deps, gateway.completePayment(b.gatewayPaymentLinkId)[0]!);
+    expect(second).toMatchObject({ result: 'oversell_detected', orderId: b.orderId });
 
-    // Both Orders are paid; stock still says 1: the shortfall now exists for
-    // T9's fulfilment-time check to discover and refund. That is the Oversell,
-    // manufactured deterministically.
+    // Stock hit 0 exactly once and never went negative — the decrement is an
+    // atomic conditional update, not a check-then-write.
     const [variantRow] = await deps.db
       .select()
       .from(variants)
       .where(eq(variants.id, 'var_test_tee_default'));
-    expect(variantRow?.stock).toBe(1);
+    expect(variantRow?.stock).toBe(0);
     const orderA = await findOrderById(deps.db, MERCHANT_ID, a.orderId);
     const orderB = await findOrderById(deps.db, MERCHANT_ID, b.orderId);
     expect(orderA?.status).toBe('paid');
+    // Paid-but-oversold, with the shortfall on the row for the refund step
+    // (`refundOversoldOrder`) — the full path is T9's own suite.
     expect(orderB?.status).toBe('paid');
+    expect(orderB?.oversellShortfall).not.toBeNull();
     // Line items live in order_items since T4 — the legacy quantity column is null.
     const lines = await deps.db.select().from(orderItems);
     const sold = lines.reduce((sum, line) => sum + line.quantity, 0);
-    expect(sold).toBeGreaterThan(variantRow?.stock ?? 0);
+    expect(sold).toBeGreaterThan(1);
   });
 });

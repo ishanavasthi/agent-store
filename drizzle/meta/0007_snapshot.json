@@ -1,6 +1,6 @@
 {
-  "id": "f6a9d868-0eb3-4550-ba2b-643e4d243680",
-  "prevId": "912a8c59-b689-4337-a8af-cfd0a4120f83",
+  "id": "bdfef3c9-d876-46af-b906-fcf8e18727ae",
+  "prevId": "f6a9d868-0eb3-4550-ba2b-643e4d243680",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -718,6 +718,24 @@
           "primaryKey": false,
           "notNull": false
         },
+        "oversell_shortfall": {
+          "name": "oversell_shortfall",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "refund_reason": {
+          "name": "refund_reason",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "gateway_refund_id": {
+          "name": "gateway_refund_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -740,6 +758,12 @@
         },
         "cancelled_at": {
           "name": "cancelled_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "refunded_at": {
+          "name": "refunded_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
@@ -1177,6 +1201,124 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.refund_receipts": {
+      "name": "refund_receipts",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "merchant_id": {
+          "name": "merchant_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "order_id": {
+          "name": "order_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "receipt_id": {
+          "name": "receipt_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "payload": {
+          "name": "payload",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "hash": {
+          "name": "hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "merchant_signature": {
+          "name": "merchant_signature",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "refund_receipts_order_idx": {
+          "name": "refund_receipts_order_idx",
+          "columns": [
+            {
+              "expression": "order_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "refund_receipts_merchant_id_merchants_id_fk": {
+          "name": "refund_receipts_merchant_id_merchants_id_fk",
+          "tableFrom": "refund_receipts",
+          "tableTo": "merchants",
+          "columnsFrom": [
+            "merchant_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "refund_receipts_order_id_orders_id_fk": {
+          "name": "refund_receipts_order_id_orders_id_fk",
+          "tableFrom": "refund_receipts",
+          "tableTo": "orders",
+          "columnsFrom": [
+            "order_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "refund_receipts_receipt_id_receipts_id_fk": {
+          "name": "refund_receipts_receipt_id_receipts_id_fk",
+          "tableFrom": "refund_receipts",
+          "tableTo": "receipts",
+          "columnsFrom": [
+            "receipt_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.variants": {
       "name": "variants",
       "schema": "",
@@ -1294,7 +1436,12 @@
         "payment.replayed",
         "mandate.refused",
         "payment.declined",
-        "order.cancelled"
+        "order.cancelled",
+        "order.fulfilled",
+        "order.oversell_detected",
+        "gateway.refund_attempted",
+        "order.refunded",
+        "receipt.refund_issued"
       ]
     },
     "public.order_status": {

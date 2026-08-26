@@ -201,6 +201,7 @@ describe('the mandate chain, through the MCP tools', () => {
       'gateway.order_linked',
       'order.paid',
       'receipt.issued',
+      'order.fulfilled',
       'gateway.webhook_received',
     ]);
     const verified = chain.find((e) => e.type === 'payment.verified')!;
