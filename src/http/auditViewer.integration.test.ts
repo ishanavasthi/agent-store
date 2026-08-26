@@ -9,8 +9,9 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { asc, eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { LocalSigner } from '../buyer/localSigner.js';
 import { MERCHANT_NAME } from '../config.js';
-import { auditEvents } from '../db/schema.js';
+import { auditEvents, variants } from '../db/schema.js';
 import type { StorefrontDeps } from '../deps.js';
 import { applyGatewayWebhook, type WebhookOutcome } from '../domain/orders.js';
 import { StubGateway, type SyntheticWebhook } from '../gateway/stubGateway.js';
@@ -31,8 +32,13 @@ const TEE = 'var_test_tee_default';
 const CAP_VARIANT = 'var_test_cap_default';
 const TEE_PRICE = 129900;
 
-/** One wire-shaped audit event, as every `/audit*` response spells it. */
-interface WireEvent {
+/**
+ * One wire-shaped audit event, as every `/audit*` response spells it.
+ * Deliberately re-declared, not imported: the test pins the wire contract
+ * independently of the server's `WireAuditEvent` (src/domain/auditEvents.ts),
+ * so a drift there fails here.
+ */
+interface WireAuditEvent {
   readonly seq: number;
   readonly type: string;
   readonly summary: string;
@@ -187,6 +193,56 @@ describe('T7 audit endpoints and viewer serving', () => {
     });
     expect(unregistered.isError).toBe(true);
 
+    // PRICE_CHANGED: the merchant edits the tee's price after the Cart was
+    // signed — the pinned price hash is now a lie about the live catalog.
+    const staleIntent = await declareIntent(400000);
+    const staleCart = await createCart(staleIntent, [{ variantId: TEE, quantity: 1 }]);
+    await deps.db.update(variants).set({ pricePaise: 149900 }).where(eq(variants.id, TEE));
+    const stale = await call(client, 'submit_payment', {
+      agentToken,
+      cartHash: staleCart,
+      idempotencyKey: randomUUID(),
+    });
+    expect(stale.isError).toBe(true);
+
+    // OUT_OF_STOCK: the cap sells out between carting and paying — carting
+    // reserves nothing, so payment is where stock is enforced.
+    const soldOutIntent = await declareIntent(400000);
+    const soldOutCart = await createCart(soldOutIntent, [
+      { variantId: CAP_VARIANT, quantity: 1 },
+    ]);
+    await deps.db.update(variants).set({ stock: 0 }).where(eq(variants.id, CAP_VARIANT));
+    const soldOut = await call(client, 'submit_payment', {
+      agentToken,
+      cartHash: soldOutCart,
+      idempotencyKey: randomUUID(),
+    });
+    expect(soldOut.isError).toBe(true);
+
+    // INVALID_MANDATE: a client-custody Agent's Intent signed by the WRONG key —
+    // well-formed Ed25519 bytes over the right payload, so verification fails
+    // on substance, not shape. Refused before any mandate is stored.
+    const signer = new LocalSigner();
+    const imposter = new LocalSigner();
+    const clientCustody = await call(client, 'register_agent', {
+      capPaise: 500000,
+      publicKey: signer.publicKey,
+    });
+    const forged = imposter.composeIntent({
+      agentId: clientCustody.body['agentId'] as string,
+      merchantId: clientCustody.body['merchantId'] as string,
+      want: 'a tee',
+      budgetPaise: 200000,
+    });
+    const forgedIntent = await call(client, 'declare_intent', {
+      agentToken: clientCustody.body['agentToken'] as string,
+      want: 'a tee',
+      budgetPaise: 200000,
+      createdAt: forged.payload.createdAt,
+      signature: forged.signature,
+    });
+    expect(forgedIntent.isError).toBe(true);
+
     // --- GET /audit: the directory -----------------------------------------
     const directory = await getJson('/audit');
     expect(directory.status).toBe(200);
@@ -200,13 +256,16 @@ describe('T7 audit endpoints and viewer serving', () => {
     });
     expect(new Date(directory.body.orders[0].createdAt).getTime()).not.toBeNaN();
 
-    const refusals = directory.body.refusals as WireEvent[];
+    const refusals = directory.body.refusals as WireAuditEvent[];
     const codes = refusals.map((r) => r.payload['code']);
     expect(codes).toContain('OVER_BUDGET');
     expect(codes).toContain('OVER_CAP');
     expect(codes).toContain('IDEMPOTENCY_REUSE');
     expect(codes).toContain('INTENT_CONSUMED');
     expect(codes).toContain('UNREGISTERED_AGENT');
+    expect(codes).toContain('PRICE_CHANGED');
+    expect(codes).toContain('OUT_OF_STOCK');
+    expect(codes).toContain('INVALID_MANDATE');
     // Newest first, by seq — the append-only log's ordering, never timestamps.
     const seqs = refusals.map((r) => r.seq);
     expect([...seqs].sort((a, b) => b - a)).toEqual(seqs);
@@ -216,44 +275,54 @@ describe('T7 audit endpoints and viewer serving', () => {
     }
 
     // --- GET /audit/refusals/:seq: full purchase-attempt context -----------
-    const overBudgetSeq = refusals.find((r) => r.payload['code'] === 'OVER_BUDGET')!.seq;
-    const timeline = await getJson(`/audit/refusals/${overBudgetSeq}`);
-    expect(timeline.status).toBe(200);
-    expect(timeline.body.seq).toBe(overBudgetSeq);
-    expect(timeline.body.refusal.type).toBe('payment.refused');
-    expect(timeline.body.refusal.payload).toMatchObject({
-      code: 'OVER_BUDGET',
-      cartHash: overBudgetCart,
-      intentHash: overBudgetIntent,
-    });
+    // Every payment.refused carries its chain hashes, so each timeline must
+    // include exactly its own attempt's Intent and Cart mandates.
+    const hashedCases = [
+      { code: 'OVER_BUDGET', cartHash: overBudgetCart, intentHash: overBudgetIntent },
+      { code: 'PRICE_CHANGED', cartHash: staleCart, intentHash: staleIntent },
+      { code: 'OUT_OF_STOCK', cartHash: soldOutCart, intentHash: soldOutIntent },
+    ];
+    for (const { code, cartHash, intentHash } of hashedCases) {
+      const seq = refusals.find((r) => r.payload['code'] === code)!.seq;
+      const timeline = await getJson(`/audit/refusals/${seq}`);
+      expect(timeline.status).toBe(200);
+      expect(timeline.body.seq).toBe(seq);
+      expect(timeline.body.refusal.type).toBe('payment.refused');
+      expect(timeline.body.refusal.payload).toMatchObject({ code, cartHash, intentHash });
 
-    const events = timeline.body.events as WireEvent[];
-    const types = events.map((e) => e.type);
-    expect(types).toContain('mandate.intent_declared');
-    expect(types).toContain('mandate.cart_created');
-    expect(types).toContain('payment.refused');
-    // Only THIS attempt's mandates — never the happy purchase's.
-    for (const event of events) {
-      if (event.type === 'mandate.intent_declared') {
-        expect(event.payload['intentHash']).toBe(overBudgetIntent);
+      const events = timeline.body.events as WireAuditEvent[];
+      const types = events.map((e) => e.type);
+      expect(types).toContain('mandate.intent_declared');
+      expect(types).toContain('mandate.cart_created');
+      expect(types).toContain('payment.refused');
+      // Only THIS attempt's mandates — never another purchase's.
+      for (const event of events) {
+        if (event.type === 'mandate.intent_declared') {
+          expect(event.payload['intentHash']).toBe(intentHash);
+        }
+        if (event.type === 'mandate.cart_created') {
+          expect(event.payload['cartHash']).toBe(cartHash);
+        }
       }
-      if (event.type === 'mandate.cart_created') {
-        expect(event.payload['cartHash']).toBe(overBudgetCart);
-      }
+      expect(events.some((e) => e.seq === seq)).toBe(true);
+      const eventSeqs = events.map((e) => e.seq);
+      expect([...eventSeqs].sort((a, b) => a - b)).toEqual(eventSeqs);
     }
-    expect(events.some((e) => e.seq === overBudgetSeq)).toBe(true);
-    const eventSeqs = events.map((e) => e.seq);
-    expect([...eventSeqs].sort((a, b) => a - b)).toEqual(eventSeqs);
 
-    // A hashless refusal (agent.refused) is its own complete story.
-    const unregisteredSeq = refusals.find(
-      (r) => r.payload['code'] === 'UNREGISTERED_AGENT',
-    )!.seq;
-    const lone = await getJson(`/audit/refusals/${unregisteredSeq}`);
-    expect(lone.status).toBe(200);
-    expect(lone.body.refusal.type).toBe('agent.refused');
-    expect(lone.body.events).toHaveLength(1);
-    expect(lone.body.events[0].seq).toBe(unregisteredSeq);
+    // Hashless refusals (agent.refused, mandate.refused) are refused before
+    // any mandate is stored: each is its own complete one-event story.
+    const loneCases = [
+      { code: 'UNREGISTERED_AGENT', type: 'agent.refused' },
+      { code: 'INVALID_MANDATE', type: 'mandate.refused' },
+    ];
+    for (const { code, type } of loneCases) {
+      const seq = refusals.find((r) => r.payload['code'] === code)!.seq;
+      const lone = await getJson(`/audit/refusals/${seq}`);
+      expect(lone.status).toBe(200);
+      expect(lone.body.refusal.type).toBe(type);
+      expect(lone.body.events).toHaveLength(1);
+      expect(lone.body.events[0].seq).toBe(seq);
+    }
 
     // Unknown seq, a non-refusal seq, and a non-numeric seq all 404 alike.
     expect((await getJson('/audit/refusals/999999')).body).toMatchObject({
