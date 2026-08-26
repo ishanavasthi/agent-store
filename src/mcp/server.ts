@@ -3,10 +3,9 @@ import { z } from 'zod';
 import { MERCHANT_NAME } from '../config.js';
 import type { StorefrontDeps } from '../deps.js';
 import { registerAgent, requireRegisteredAgent } from '../domain/agents.js';
-import { findPublishedVariant, listPublishedVariants } from '../domain/catalog.js';
+import { listPublishedVariants } from '../domain/catalog.js';
 import { createCart, declareIntent } from '../domain/mandateFlow.js';
-import { findOrderById, listOrderItems, toOrderStatusView } from '../domain/orders.js';
-import { findOrderReceipt } from '../domain/receipts.js';
+import { readOrderStatus } from '../domain/orderStatus.js';
 import { submitPayment } from '../domain/submitPayment.js';
 import { Refusal, ValidationError } from '../domain/refusal.js';
 
@@ -391,30 +390,9 @@ export function createMcpServer(deps: StorefrontDeps): McpServer {
     },
     withToolErrors(async ({ agentToken, orderId }) => {
       await requireRegisteredAgent(deps.db, deps.merchantId, agentToken, 'get_order_status');
-      const row = await findOrderById(deps.db, deps.merchantId, orderId);
-      if (row === null) {
-        return validationResult(
-          new ValidationError('ORDER_NOT_FOUND', `No order with id ${orderId}`),
-        );
-      }
-      const items = await listOrderItems(deps.db, row.id);
-      // Legacy single-variant Orders only; mandate-backed Orders (T4) have a
-      // null variantId and carry their product detail in `items` instead.
-      const variant =
-        row.variantId === null
-          ? null
-          : await findPublishedVariant(deps.db, deps.merchantId, row.variantId);
-      // The Receipt is minted by the paid webhook, so it appears exactly when
-      // the status flips to paid — and only for mandate-backed Orders.
-      const receipt =
-        row.status === 'paid' ? await findOrderReceipt(deps.db, deps.merchantId, row.id) : null;
-      return textResult({
-        ...toOrderStatusView(row),
-        items,
-        product: variant?.productTitle ?? null,
-        receipt,
-        auditUrl: `${deps.publicBaseUrl}/audit/${row.id}`,
-      });
+      // Shared with the REST face (T14): both serve the identical body,
+      // Receipt included, so the shapes cannot drift apart.
+      return textResult(await readOrderStatus(deps, orderId));
     }),
   );
 

@@ -18,6 +18,16 @@ _Avoid_: store, shop, seller
 Where an Agent's private key lives, fixed at registration (see ADR-0004). *Custodial*: the server mints and holds the keypair and signs on the Agent's behalf (connector buyers). *Client custody*: the Agent registered with its own public key, the server stores no private key (`private_key IS NULL` — that column is the whole model), and every agent-side signature is computed client-side and verified against the registered key. Both buy through the same tools.
 _Avoid_: non-custodial account, wallet, key escrow
 
+### Protocol surface
+
+**Face**:
+One protocol door into the single storefront core. v1 has two: the MCP face (`/mcp`, Streamable HTTP tools) and the ACP-flavored REST face (`/acp/*`). Faces are thin adapters — every trust-layer decision is made by the core, so a Refusal, a validation error, or a Receipt is identical in shape on both.
+_Avoid_: API version, frontend, channel
+
+**Discovery doc**:
+The machine-readable description of both faces served at `/.well-known/agent-store.json` — MCP endpoint, REST base URL and endpoints, auth model, money conventions, and the failure shapes. How an agent landing on the bare domain picks its door.
+_Avoid_: manifest, spec, API docs
+
 ### Catalog
 
 **Product**:
