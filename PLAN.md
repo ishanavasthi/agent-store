@@ -146,12 +146,15 @@ At every milestone boundary: **STOP — run the check, record the result here, r
 **M4 — Ingestion + dataset (Aug 29–31).** Demo dataset built (§5.3); ingestion pipeline with per-field confidence; merchant confirmation screen; accuracy measured.
 **Check:** ingesting the 25–30 raw products yields a published catalog where every low-confidence field went through confirmation, and accuracy vs hand labels ≥ the floor set by S3, reported per field.
 **→ Aug 31 checkpoint: if ≥2 days behind, fire the §9 de-scope ladder now, not later.**
+**Check result (2026-08-26, 3 days early): PASS.** T11+T12+T13 merged (PRs #27, #31, #33). 28 products ingested; per-field accuracy vs published hand labels: name 27/28 (96%), price/stock/variant-labels/description 28/28 — all ≥ the ~70% S3 floor (committed run: `fixtures/demo-dataset/runs/gpt-5-mini.json`). Live Neon ingest: 2 auto-published, 26 held in `needs-confirmation` for the deployed `/viewer/confirm` screen. Caveat: captions were AI-authored in the spike captions' style (approved that night) — human review pending before release.
 
 **M5 — Rehearsed failures + WhatsApp secondary (Sep 1).** Both §5.6 failures scripted and repeatable. WhatsApp price-list ingestion only if the checkpoint passed.
 **Check:** one command each produces the full failure timeline in the viewer; the oversell refund is visible in the Razorpay test dashboard.
+**Check result (2026-08-26, partial — 6 days early): scripted halves PASS.** `npm run failure:decline` and `npm run failure:oversell` (PRs #28, #30) each reproduce the full timeline deterministically and render in the viewer. Real-rails halves (live `failure@razorpay` decline; refund visible in the Razorpay dashboard) await manual verification. WhatsApp secondary not started (checkpoint not yet reached; schedule-gated as planned).
 
 **M6 — Eval harness (Sep 1–2).** The 30 protocol scenarios + rule-auditor + 3–5 live runs + scoreboard.
 **Check:** `npm run evals` completes in one command; auditor reports zero violations from the audit log alone; scoreboard lands in the README.
+**Check result (2026-08-26, partial — 6 days early): scripted suite PASS.** `npm run evals` (PR #32): 30/30 scenarios, rule-auditor zero violations from the audit log alone (and proven able to fail on 12 planted violations), scoreboard + methodology in README. Live suite: harness merged (PR #29, CI-tested against the stub); the 3–5 real runs remain — issue #17 stays open until they're executed and reported.
 
 **M7 — Release (Sep 2–3).** Demo video recorded, README finalized, architecture doc, repo public.
 **Check:** repo public with live demo URL working; video published; release notes in `private/` completed.
