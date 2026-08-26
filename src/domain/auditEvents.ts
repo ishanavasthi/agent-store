@@ -72,6 +72,23 @@ export const AUDIT_EVENT_TYPES = [
 export type AuditEventType = (typeof AUDIT_EVENT_TYPES)[number];
 
 /**
+ * The trust layer's three no's — the only event types the T7 viewer treats as
+ * standalone Refusals, addressed by audit `seq` because no Order exists to
+ * address them by (a Refusal is precisely the case where money did not move).
+ */
+export const REFUSAL_EVENT_TYPES = [
+  'agent.refused',
+  'mandate.refused',
+  'payment.refused',
+] as const satisfies readonly AuditEventType[];
+
+export type RefusalEventType = (typeof REFUSAL_EVENT_TYPES)[number];
+
+export function isRefusalEventType(type: AuditEventType): type is RefusalEventType {
+  return (REFUSAL_EVENT_TYPES as readonly AuditEventType[]).includes(type);
+}
+
+/**
  * The transitions a completed purchase must show — since T4, the mandate-first
  * path: chain declared and verified before the Order, Receipt after payment.
  * `gateway.order_linked` is absent on purpose: Razorpay attaches a gateway
@@ -167,6 +184,19 @@ export interface AuditEventRecord {
 
 export interface AuditChainEntry extends AuditEventRecord {
   readonly summary: string;
+}
+
+/**
+ * One audit event as every `/audit*` HTTP response spells it: `occurredAt`
+ * ISO-serialised, `type` widened to string because wire consumers (the T7
+ * viewer) must render unknown future event types rather than reject them.
+ */
+export interface WireAuditEvent {
+  readonly seq: number;
+  readonly type: string;
+  readonly summary: string;
+  readonly occurredAt: string;
+  readonly payload: Record<string, unknown>;
 }
 
 /**

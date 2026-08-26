@@ -268,3 +268,9 @@ Why: the client-custody half of split custody (2026-08-22 "Split key custody") s
 Rejected: a two-step create_cart handshake (reintroduces the half-created cart ADR-0002 killed); skipping the agent-side Cart signature because the Payment signature covers cartHash (hash-transitivity is not a signature); a custody flag column (could disagree with the NULL that is the fact); extending the server to sign "just this once" for a client-custody Agent (the design error the model exists to make impossible).
 Revisit when: never within this build.
 Tier: Likely (Claude ruling during T6, 2026-08-26 — flagged for veto)
+
+## 2026-08-26: Standalone Refusals are addressed by audit `seq`; context rejoins through the hashes their payloads already carry
+Why: a Refusal is precisely the case where no Order exists, so the T7 viewer needs another address for it — and `seq` is already unique, monotonic, and public in every `/audit` response. `GET /audit/refusals/:seq` names one Refusal; its purchase-attempt timeline is recovered by matching the `intentHash`/`cartHash` a `payment.refused` payload already records against the `mandate.intent_declared` / `mandate.cart_created` events (plus sibling refusals sharing the `intentHash`) — the same linkage trick `readPurchaseAuditChain` uses. `agent.refused` / `mandate.refused` carry no hashes because they fired before any chain existed, so their single event IS the complete story. No new columns, no synthetic attempt id: the log stays append-only exactly as ADR-0003 shipped it.
+Rejected: an attempt-id column (a write-path schema change to an append-only table, for a read concern); addressing refusals by `intentHash` (not unique — sibling refusals share it — and absent on the hashless refusal types).
+Revisit when: never within this build.
+Tier: Likely (Claude ruling during T7, 2026-08-26 — flagged for veto)

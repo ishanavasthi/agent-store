@@ -1,12 +1,40 @@
+import { existsSync } from 'node:fs';
+import path from 'node:path';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import express, { type Express, type NextFunction, type Request, type Response } from 'express';
 import { MERCHANT_NAME } from '../config.js';
 import type { StorefrontDeps } from '../deps.js';
-import { missingHappyPathSteps } from '../domain/auditEvents.js';
-import { readPurchaseAuditChain } from '../domain/auditLog.js';
-import { applyGatewayWebhook, findOrderById, toOrderStatusView } from '../domain/orders.js';
+import {
+  missingHappyPathSteps,
+  type AuditChainEntry,
+  type WireAuditEvent,
+} from '../domain/auditEvents.js';
+import {
+  listRecentRefusals,
+  readPurchaseAuditChain,
+  readRefusalContext,
+} from '../domain/auditLog.js';
+import {
+  applyGatewayWebhook,
+  findOrderById,
+  listRecentOrders,
+  toOrderStatusView,
+} from '../domain/orders.js';
 import { RAZORPAY_SIGNATURE_HEADER, WebhookParseError } from '../gateway/razorpayWebhook.js';
 import { createMcpServer } from '../mcp/server.js';
+
+/** Each `GET /audit` directory list is capped here; the log itself is unbounded. */
+const AUDIT_DIRECTORY_LIMIT = 50;
+
+function toWireEvent(event: AuditChainEntry): WireAuditEvent {
+  return {
+    seq: event.seq,
+    type: event.type,
+    summary: event.summary,
+    occurredAt: event.occurredAt.toISOString(),
+    payload: event.payload,
+  };
+}
 
 /** Escape text destined for HTML. Nothing user-influenced is interpolated raw. */
 function escapeHtml(value: string): string {
@@ -109,8 +137,46 @@ export function createApp(deps: StorefrontDeps): Express {
 
   // ---------------------------------------------------------------------------
   // Audit — the whole point of ADR-0003 made visible. The T7 React viewer reads
-  // exactly this endpoint; the rule-auditor reads exactly this data.
+  // exactly these endpoints; the rule-auditor reads exactly this data.
+  //
+  // Registration order matters: `/audit` and `/audit/refusals/:seq` must come
+  // before `/audit/:orderId`, or Express routes `refusals` as an orderId.
   // ---------------------------------------------------------------------------
+  app.get('/audit', async (_req: Request, res: Response) => {
+    const [recentOrders, recentRefusals] = await Promise.all([
+      listRecentOrders(deps.db, deps.merchantId, AUDIT_DIRECTORY_LIMIT),
+      listRecentRefusals(deps.db, deps.merchantId, AUDIT_DIRECTORY_LIMIT),
+    ]);
+    res.json({
+      merchant: MERCHANT_NAME,
+      orders: recentOrders,
+      refusals: recentRefusals.map(toWireEvent),
+    });
+  });
+
+  // A standalone Refusal has no Order — it is addressed by its audit `seq`
+  // (DECISIONS 2026-08-26, refusal addressing).
+  app.get('/audit/refusals/:seq', async (req: Request<{ seq: string }>, res: Response) => {
+    const seq = Number.parseInt(req.params.seq, 10);
+    const context =
+      Number.isSafeInteger(seq) && seq > 0
+        ? await readRefusalContext(deps.db, deps.merchantId, seq)
+        : null;
+
+    if (context === null) {
+      // Unknown seq and a seq naming a non-refusal event answer identically:
+      // this endpoint only ever confirms Refusals.
+      res.status(404).json({ error: 'refusal_not_found', seq: req.params.seq });
+      return;
+    }
+
+    res.json({
+      seq,
+      refusal: toWireEvent(context.refusal),
+      events: context.events.map(toWireEvent),
+    });
+  });
+
   app.get('/audit/:orderId', async (req: Request<{ orderId: string }>, res: Response) => {
     const orderId = req.params.orderId;
     const order = await findOrderById(deps.db, deps.merchantId, orderId);
@@ -131,15 +197,30 @@ export function createApp(deps: StorefrontDeps): Express {
       complete: missingSteps.length === 0,
       missingSteps,
       anomalies: events.filter((event) => event.type === 'order.anomaly_detected').length,
-      events: events.map((event) => ({
-        seq: event.seq,
-        type: event.type,
-        summary: event.summary,
-        occurredAt: event.occurredAt.toISOString(),
-        payload: event.payload,
-      })),
+      events: events.map(toWireEvent),
     });
   });
+
+  // ---------------------------------------------------------------------------
+  // Viewer — the T7 SPA, served by this same app (no second deployment). The
+  // build lands in `dist/viewer`; the routes below it (`/viewer/orders/:id`,
+  // `/viewer/refusals/:seq`) are client-side, so anything without a matching
+  // file falls back to the SPA's index. A missing build must not take the rest
+  // of the app down: dev and test runs routinely have no viewer build, so the
+  // fallback answers 404 with a hint instead of throwing at startup.
+  // ---------------------------------------------------------------------------
+  const viewerDistDir = path.resolve(deps.viewerDistDir ?? path.join(process.cwd(), 'dist/viewer'));
+  const serveViewerIndex = (_req: Request, res: Response): void => {
+    const indexPath = path.join(viewerDistDir, 'index.html');
+    if (!existsSync(indexPath)) {
+      res.status(404).json({ error: 'viewer_not_built' });
+      return;
+    }
+    res.sendFile(indexPath);
+  };
+  app.get('/viewer', serveViewerIndex);
+  app.use('/viewer', express.static(viewerDistDir));
+  app.get('/viewer/*splat', serveViewerIndex);
 
   // Where Razorpay returns the human's browser after they approve the link.
   // Purely cosmetic: the webhook, not this redirect, is what marks the Order paid.
@@ -176,7 +257,15 @@ export function createApp(deps: StorefrontDeps): Express {
       service: 'agent-store',
       merchant: MERCHANT_NAME,
       mcp: `${deps.publicBaseUrl}/mcp`,
-      endpoints: ['/mcp', '/webhooks/razorpay', '/audit/:orderId', '/healthz'],
+      endpoints: [
+        '/mcp',
+        '/webhooks/razorpay',
+        '/audit',
+        '/audit/:orderId',
+        '/audit/refusals/:seq',
+        '/viewer',
+        '/healthz',
+      ],
     });
   });
 

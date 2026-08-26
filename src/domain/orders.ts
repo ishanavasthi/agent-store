@@ -1,4 +1,4 @@
-import { and, asc, eq, isNull, ne, type SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, isNull, ne, type SQL } from 'drizzle-orm';
 import type { Database, Executor } from '../db/client.js';
 import {
   orderItems,
@@ -126,6 +126,36 @@ export function toOrderStatusView(row: OrderRow): OrderStatusView {
     createdAt: row.createdAt.toISOString(),
     paidAt: row.paidAt === null ? null : row.paidAt.toISOString(),
   };
+}
+
+/** One row of the `GET /audit` directory — just enough for the viewer's list. */
+export interface OrderDirectoryEntry {
+  readonly orderId: string;
+  readonly status: OrderStatus;
+  readonly total: MoneyView;
+  readonly createdAt: string;
+}
+
+/** The Merchant's most recent Orders, newest first, for the audit directory. */
+export async function listRecentOrders(
+  executor: Executor,
+  merchantId: string,
+  limit: number,
+): Promise<OrderDirectoryEntry[]> {
+  const rows = await executor
+    .select()
+    .from(orders)
+    .where(eq(orders.merchantId, merchantId))
+    // `id` breaks createdAt ties so the directory order is deterministic.
+    .orderBy(desc(orders.createdAt), desc(orders.id))
+    .limit(limit);
+
+  return rows.map((row) => ({
+    orderId: row.id,
+    status: row.status,
+    total: moneyView(paise(row.amountPaise)),
+    createdAt: row.createdAt.toISOString(),
+  }));
 }
 
 export type WebhookOutcome =
