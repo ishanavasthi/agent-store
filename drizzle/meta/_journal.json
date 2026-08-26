@@ -36,6 +36,13 @@
       "when": 1787700436213,
       "tag": "0004_payment_replayed",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1787702748200,
+      "tag": "0005_split_key_custody",
+      "breakpoints": true
     }
   ]
 }

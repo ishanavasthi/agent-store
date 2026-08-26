@@ -46,6 +46,25 @@ export function signMessage(privateKey: string, message: string): string {
   return sign(null, Buffer.from(message, 'utf8'), key).toString('base64');
 }
 
+/**
+ * Whether a string is a usable Ed25519 public key in the wire encoding above
+ * (base64 SPKI DER). Used at registration to reject garbage before it becomes
+ * a stored landmine (T6, client-custody keys); any parse failure — bad base64,
+ * bad DER, or a key of some other algorithm — is simply `false`.
+ */
+export function isEd25519PublicKey(publicKey: string): boolean {
+  try {
+    const key = createPublicKey({
+      key: Buffer.from(publicKey, 'base64'),
+      type: 'spki',
+      format: 'der',
+    });
+    return key.asymmetricKeyType === 'ed25519';
+  } catch {
+    return false;
+  }
+}
+
 /** Verify a base64 signature over a UTF-8 message against a stored public key. */
 export function verifyMessage(publicKey: string, message: string, signature: string): boolean {
   const key = createPublicKey({

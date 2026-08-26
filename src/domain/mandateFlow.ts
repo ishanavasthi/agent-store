@@ -17,23 +17,29 @@ import {
   computePriceHash,
   hashMandate,
   signMandate,
+  verifyMandateSignature,
   type CartItem,
   type CartMandatePayload,
   type IntentMandatePayload,
+  type MandatePayload,
 } from './mandates.js';
 import { moneyView, paise, type MoneyView, type Paise } from './money.js';
-import { ValidationError } from './refusal.js';
+import { Refusal, ValidationError } from './refusal.js';
 
 /**
  * The first two steps of the mandate chain — `declare_intent` and `create_cart`
  * (CONTEXT.md → Intent mandate / Cart mandate; DECISIONS.md 2026-08-26 "the
  * mandate chain is the only purchase path").
  *
- * Custodial signing throughout (DECISIONS 2026-08-23 "Split key custody"): the
- * server holds the Agent's private key and signs on its behalf; the merchant
- * key signs the merchant's side of the Cart. Every payload and signature is
- * returned to the buyer, so an external verifier holding only the public keys
- * can check everything — custody hides nothing.
+ * Signing follows the split custody model (DECISIONS 2026-08-22 "Split key
+ * custody"; ADR-0004). For a custodial Agent the server holds the private key
+ * and signs on its behalf; for a client-custody Agent (`privateKey` NULL) the
+ * Agent composes `createdAt` and signs the exact canonical payload itself, and
+ * the server verifies that signature against the registered public key before
+ * storing anything — it never signs on such an Agent's behalf. The merchant
+ * key signs the merchant's side of the Cart either way. Every payload and
+ * signature is returned to the buyer, so an external verifier holding only
+ * the public keys can check everything — custody hides nothing.
  *
  * ADR-0002: `create_cart` is one-shot. It stores the immutable signed Cart
  * mandate and touches nothing else — no draft state, no invalidation of
@@ -52,11 +58,171 @@ export function budgetPaiseFromInput(value: number): Paise {
   return paise(value);
 }
 
+/**
+ * A client-minted mandate timestamp must at least parse as a date: it is part
+ * of the signed bytes, and a garbage string stored as `createdAt` would be a
+ * landmine in every later reading of the mandate. Malformed input, so a
+ * validation error — the signature over it is judged separately.
+ */
+export function createdAtFromInput(value: string): string {
+  if (Number.isNaN(Date.parse(value))) {
+    throw new ValidationError(
+      'INVALID_CREATED_AT',
+      `createdAt must be an ISO-8601 timestamp (e.g. ${new Date().toISOString()}), got: ${value}`,
+    );
+  }
+  return value;
+}
+
+/**
+ * One signing step, resolved against the Agent's custody (ADR-0004): either
+ * the server signs with the custodial private key, or the client already did —
+ * with its minted `createdAt` and detached signature validated present and
+ * well-formed. Arguments that contradict the custody are malformed requests —
+ * `CUSTODY_MISMATCH`, a validation error — in *both* directions: a custodial
+ * Agent supplying a signature is a confused client that must not be silently
+ * "corrected" by server signing.
+ */
+export type SigningMode =
+  | { readonly custody: 'custodial'; readonly privateKey: string }
+  | { readonly custody: 'client'; readonly createdAt: string; readonly signature: string };
+
+export function resolveSigningMode(
+  agent: AgentRow,
+  tool: string,
+  supplied: { readonly createdAt?: string | undefined; readonly signature?: string | undefined },
+): SigningMode {
+  if (agent.privateKey !== null) {
+    if (supplied.createdAt !== undefined || supplied.signature !== undefined) {
+      throw new ValidationError(
+        'CUSTODY_MISMATCH',
+        `${tool}: this Agent is custodial — the server composes and signs its mandates; ` +
+          'omit the signature arguments. To sign locally, register a new Agent with your own publicKey.',
+      );
+    }
+    return { custody: 'custodial', privateKey: agent.privateKey };
+  }
+  if (supplied.createdAt === undefined || supplied.signature === undefined) {
+    throw new ValidationError(
+      'CUSTODY_MISMATCH',
+      `${tool}: this Agent holds its key client-side, so the server cannot sign for it — ` +
+        'mint createdAt yourself and supply your signature over the canonical payload.',
+    );
+  }
+  return {
+    custody: 'client',
+    createdAt: createdAtFromInput(supplied.createdAt),
+    signature: supplied.signature,
+  };
+}
+
+/**
+ * `resolveSigningMode`'s sibling for the third signature (ADR-0004): the
+ * deferred agent-side Cart signature riding on `submit_payment`. Required from
+ * a client-custody Agent (`create_cart` stored NULL for it); a contradiction
+ * from a custodial one (its Cart was signed at `create_cart`) — the same
+ * both-directions `CUSTODY_MISMATCH` rule, worded here and nowhere else.
+ */
+export function resolveCartSignature(
+  signing: SigningMode,
+  supplied: string | undefined,
+): string | null {
+  if (signing.custody === 'client') {
+    if (supplied === undefined) {
+      throw new ValidationError(
+        'CUSTODY_MISMATCH',
+        'submit_payment: this Agent holds its key client-side — supply cartSignature, your ' +
+          'signature over the exact Cart mandate payload create_cart returned.',
+      );
+    }
+    return supplied;
+  }
+  if (supplied !== undefined) {
+    throw new ValidationError(
+      'CUSTODY_MISMATCH',
+      'submit_payment: this Agent is custodial — its Cart mandate was signed at create_cart; ' +
+        'omit cartSignature.',
+    );
+  }
+  return null;
+}
+
+/**
+ * `createdAt` under the resolved SigningMode: a client-custody Agent minted it
+ * as part of the bytes it signed; custodially the server mints it now. Either
+ * way it is part of the signed bytes — two identical payloads at different
+ * moments are two distinct mandates.
+ */
+export function mandateCreatedAt(signing: SigningMode): string {
+  return signing.custody === 'client' ? signing.createdAt : new Date().toISOString();
+}
+
+/**
+ * The agent-side signature for a payload composed under this SigningMode:
+ * custodially the server signs it now; a client-custody Agent already signed
+ * it, so its supplied signature is adopted as-is — to be judged by
+ * `agentSignatureVerifies` before anything is stored.
+ */
+export function signOrAdopt(signing: SigningMode, payload: MandatePayload): string {
+  return signing.custody === 'custodial'
+    ? signMandate(signing.privateKey, payload)
+    : signing.signature;
+}
+
+/**
+ * The custody-aware check on a signature from `signOrAdopt`: a client-adopted
+ * signature must verify against the Agent's registered public key; a custodial
+ * one was computed by the server over this same payload a moment ago, so there
+ * is nothing to re-check.
+ */
+export function agentSignatureVerifies(
+  signing: SigningMode,
+  publicKey: string,
+  payload: MandatePayload,
+  signature: string,
+): boolean {
+  return signing.custody === 'custodial' || verifyMandateSignature(publicKey, payload, signature);
+}
+
+/**
+ * A locally signed mandate whose signature does not verify is the trust layer's
+ * no — policy, before money moves, so a Refusal (`INVALID_MANDATE`), audited
+ * first as `mandate.refused` in its own transaction (the `agent.refused`
+ * precedent: orderId null — no Order exists), then thrown. Nothing is stored.
+ */
+async function refuseUnverifiedMandate(
+  db: Database,
+  agent: AgentRow,
+  tool: string,
+  reason: string,
+): Promise<never> {
+  const refusal = new Refusal({ code: 'INVALID_MANDATE', reason, recoverable: false });
+  await db.transaction(async (tx) => {
+    await appendAuditEvent(tx, {
+      type: 'mandate.refused',
+      merchantId: agent.merchantId,
+      orderId: null,
+      payload: {
+        code: refusal.code,
+        reason: refusal.reason,
+        recoverable: refusal.recoverable,
+        tool,
+        agentId: agent.id,
+      },
+    });
+  });
+  throw refusal;
+}
+
 export interface DeclareIntentInput {
   /** Free-text description of what the buyer wants. */
   readonly want: string;
   /** Per-Intent spend ceiling, integer paise (Budget — never "limit"/"quota"). */
   readonly budgetPaise: number;
+  /** Client custody only (ADR-0004): the `createdAt` the Agent put in the payload it signed. */
+  readonly createdAt?: string | undefined;
+  /** Client custody only: the Agent's detached signature over the canonical payload. */
+  readonly signature?: string | undefined;
 }
 
 export interface DeclareIntentResult {
@@ -81,16 +247,33 @@ export async function declareIntent(
     );
   }
 
+  const signing = resolveSigningMode(agent, 'declare_intent', {
+    createdAt: input.createdAt,
+    signature: input.signature,
+  });
+
+  // Client custody: the client minted `createdAt`, and the server recomposes
+  // the payload from the same fields — so what is verified and stored is
+  // byte-for-byte what the client claims to have signed.
   const payload: IntentMandatePayload = {
     agentId: agent.id,
     merchantId: agent.merchantId,
     want,
     budgetPaise: budget,
-    // Part of the signed bytes: two identical wants are two distinct Intents.
-    createdAt: new Date().toISOString(),
+    createdAt: mandateCreatedAt(signing),
   };
   const intentHash = hashMandate(payload);
-  const signature = signMandate(agent.privateKey, payload);
+  const signature = signOrAdopt(signing, payload);
+  if (!agentSignatureVerifies(signing, agent.publicKey, payload, signature)) {
+    await refuseUnverifiedMandate(
+      db,
+      agent,
+      'declare_intent',
+      'Intent mandate signature does not verify against this Agent’s registered public key. ' +
+        'Sign exactly canonicalJson({agentId, merchantId, want, budgetPaise, createdAt}) with the ' +
+        'key you registered, then declare a fresh Intent.',
+    );
+  }
 
   // Row + audit event in one transaction (ADR-0003). `consumedByOrderId` stays
   // NULL in T4 — T5's INTENT_CONSUMED writes it under a SQL guard.
@@ -133,7 +316,12 @@ export interface CartLineView {
 export interface CreateCartResult {
   readonly cartHash: string;
   readonly payload: CartMandatePayload;
-  readonly agentSignature: string;
+  /**
+   * Null for a client-custody Agent (ADR-0004): the server never signs on its
+   * behalf, so the Agent signs `canonicalJson(payload)` locally and supplies
+   * that signature to submit_payment as `cartSignature`.
+   */
+  readonly agentSignature: string | null;
   readonly merchantSignature: string;
   readonly total: MoneyView;
   readonly items: readonly CartLineView[];
@@ -288,9 +476,15 @@ export async function createCart(
     createdAt: new Date().toISOString(),
   };
   const cartHash = hashMandate(payload);
-  // Both-sides-signed: the Agent's custodial key authorizes the purchase shape,
-  // the merchant key commits the merchant to these prices.
-  const agentSignature = signMandate(agent.privateKey, payload);
+  // Both-sides-signed for a custodial Agent: its custodial key authorizes the
+  // purchase shape here. A client-custody Agent cannot sign a payload it has
+  // not yet seen — the server pins prices and mints createdAt — so its
+  // signature is deferred: `create_cart` stays one-shot, the row stores NULL,
+  // and the Agent's signature over this exact payload arrives with
+  // submit_payment, where the trust gate verifies it before money can move
+  // (ADR-0004). The merchant key commits the merchant to these prices now,
+  // in both models.
+  const agentSignature = agent.privateKey === null ? null : signMandate(agent.privateKey, payload);
   const merchantSignature = signMandate(merchantKey.privateKey, payload);
 
   await db.transaction(async (tx) => {

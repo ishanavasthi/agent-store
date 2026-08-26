@@ -29,7 +29,11 @@ export const AUDIT_EVENT_TYPES = [
   /** Something arrived that we refused to act on. Never silently swallowed. */
   'order.anomaly_detected',
   // T3 — the trust layer's own transitions:
-  /** An Agent was minted: custodial keypair + token + Cap (ADR-0001). */
+  /**
+   * An Agent was minted: key material + token + Cap (ADR-0001). Custodial by
+   * default; with a client-supplied public key the server holds no private
+   * key at all (ADR-0004) — the payload's `custody` field says which.
+   */
   'agent.registered',
   /**
    * The trust layer said no *before money moved*. The structured Refusal —
@@ -56,6 +60,13 @@ export const AUDIT_EVENT_TYPES = [
    * 2026-08-23 idempotency). Attributed to the original Order.
    */
   'payment.replayed',
+  // T6 — split custody (appended, same ALTER TYPE … ADD VALUE growth rule):
+  /**
+   * A client-custody Agent submitted a mandate whose signature did not verify
+   * against its registered public key — refused before the mandate was stored
+   * and before any money moved. Same Refusal payload shape as `agent.refused`.
+   */
+  'mandate.refused',
 ] as const;
 
 export type AuditEventType = (typeof AUDIT_EVENT_TYPES)[number];
@@ -95,7 +106,7 @@ export const AUDIT_EVENT_SUMMARIES: Record<AuditEventType, string> = {
   'gateway.order_linked': 'Razorpay’s own gateway order id recorded against this Order',
   'order.paid': 'Domain Order marked paid',
   'order.anomaly_detected': 'Anomaly detected — the Order was deliberately not advanced',
-  'agent.registered': 'Agent registered — custodial keypair minted, Cap declared',
+  'agent.registered': 'Agent registered — key material recorded, Cap declared',
   'agent.refused': 'Refused by the trust layer before any money moved — reason code in payload',
   'mandate.intent_declared': 'Intent mandate declared — Agent-signed want and Budget recorded',
   'mandate.cart_created':
@@ -105,6 +116,8 @@ export const AUDIT_EVENT_SUMMARIES: Record<AuditEventType, string> = {
   'receipt.issued': 'Merchant-signed Receipt issued for the paid Order',
   'payment.replayed':
     'Same idempotency key and cart hash — the original result was replayed, no second charge',
+  'mandate.refused':
+    'A locally signed mandate was refused — its signature did not verify against the Agent’s registered key',
 };
 
 /**

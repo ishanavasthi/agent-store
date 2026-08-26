@@ -1,6 +1,30 @@
 import { describe, expect, it } from 'vitest';
-import { capPaiseFromInput, newAgentToken } from './agents.js';
+import { capPaiseFromInput, newAgentToken, publicKeyFromInput } from './agents.js';
+import { generateSigningKeypair } from './keys.js';
 import { ValidationError } from './refusal.js';
+
+describe('publicKeyFromInput', () => {
+  it('accepts a wire-encoded Ed25519 public key, trimmed', () => {
+    const { publicKey } = generateSigningKeypair();
+    expect(publicKeyFromInput(publicKey)).toBe(publicKey);
+    expect(publicKeyFromInput(`  ${publicKey}\n`)).toBe(publicKey);
+  });
+
+  it('rejects garbage as INVALID_PUBLIC_KEY — a validation error, never a Refusal', () => {
+    // A stored garbage key would make every later signature check a lie; the
+    // registration door is where it must fail (CONTEXT.md → Failure vocabulary:
+    // malformed input is a plain validation error).
+    for (const value of ['', '   ', 'not-a-key', 'aGVsbG8=', generateSigningKeypair().privateKey]) {
+      try {
+        publicKeyFromInput(value);
+        expect.unreachable('should have thrown');
+      } catch (error) {
+        expect(error).toBeInstanceOf(ValidationError);
+        expect((error as ValidationError).code).toBe('INVALID_PUBLIC_KEY');
+      }
+    }
+  });
+});
 
 describe('capPaiseFromInput', () => {
   it('accepts a positive integer number of paise unchanged', () => {

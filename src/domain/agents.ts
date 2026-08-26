@@ -4,7 +4,7 @@ import type { Database } from '../db/client.js';
 import { agents, type AgentRow } from '../db/schema.js';
 import { appendAuditEvent } from './auditLog.js';
 import { newId } from './ids.js';
-import { generateSigningKeypair } from './keys.js';
+import { generateSigningKeypair, isEd25519PublicKey } from './keys.js';
 import { moneyView, paise, type MoneyView, type Paise } from './money.js';
 import { Refusal, ValidationError } from './refusal.js';
 
@@ -12,15 +12,23 @@ import { Refusal, ValidationError } from './refusal.js';
  * Agent registration — the trust layer's front door (T3).
  *
  * An Agent IS its registration (ADR-0001): `registerAgent` mints, in one
- * transaction, a custodial Ed25519 keypair, a bearer token, and the
- * buyer-declared Cap — and that row never changes afterwards. Re-registering
- * mints a *new* Agent with a fresh Cap; Sybil cap-bypass is the documented v1
- * non-goal (README → Threat model note).
+ * transaction, the Agent's key material, a bearer token, and the buyer-declared
+ * Cap — and that row never changes afterwards. Re-registering mints a *new*
+ * Agent with a fresh Cap; Sybil cap-bypass is the documented v1 non-goal
+ * (README → Threat model note).
  *
- * Custody note: the token is stored plaintext, deliberately. The same row
+ * Custody is split (ADR-0004). By default the server mints a custodial Ed25519
+ * keypair and signs on the Agent's behalf — the connector-buyer model. A buyer
+ * that registers with its own `publicKey` keeps the private key client-side:
+ * the row stores the public key with `private_key` NULL, and every agent
+ * signature must then arrive from the client, verified against this key.
+ *
+ * Custody note: the token is stored plaintext, deliberately. A custodial row
  * already holds the Agent's private key — the whole point of custodial keys is
  * that the server keeps the secrets — so hashing the token at rest would
- * protect one secret sitting beside an unprotected one.
+ * protect one secret sitting beside an unprotected one (DECISIONS 2026-08-26;
+ * revisit stands: now that client-custody rows hold no private key, hashing
+ * would start to earn its keep the day custodial rows disappear).
  */
 
 const AGENT_TOKEN_PREFIX = 'agt_tok_';
@@ -52,18 +60,62 @@ export function capPaiseFromInput(value: number): Paise {
   return paise(value);
 }
 
+/** Which side holds the Agent's private key (ADR-0004). */
+export type AgentCustody = 'custodial' | 'client';
+
+/**
+ * `private_key IS NULL` ⇔ client custody — the column is the whole model.
+ * For classifying into the custody vocabulary; signing sites branch on
+ * `privateKey === null` directly, because the null check is what narrows the
+ * key's type where the key itself is about to be used.
+ */
+export function agentCustody(agent: Pick<AgentRow, 'privateKey'>): AgentCustody {
+  return agent.privateKey === null ? 'client' : 'custodial';
+}
+
+/**
+ * A registration `publicKey` must be a usable Ed25519 public key in the wire
+ * encoding (base64 SPKI DER, `keys.ts`). Anything else is malformed input — a
+ * validation error, never a Refusal — because a garbage key stored here would
+ * make every later signature check a lie.
+ */
+export function publicKeyFromInput(value: string): string {
+  const publicKey = value.trim();
+  if (publicKey === '' || !isEd25519PublicKey(publicKey)) {
+    throw new ValidationError(
+      'INVALID_PUBLIC_KEY',
+      'publicKey must be a base64-encoded SPKI DER Ed25519 public key ' +
+        '(the encoding generateSigningKeypair produces)',
+    );
+  }
+  return publicKey;
+}
+
 export interface RegisterAgentInput {
   /** Buyer-declared per-merchant spend ceiling, integer paise. */
   readonly capPaise: number;
+  /**
+   * Client-custody registration (ADR-0004): the buyer's own Ed25519 public key
+   * (base64 SPKI DER). When present the server generates no keypair, stores no
+   * private key, and this Agent must sign its mandates locally. When absent,
+   * the custodial default applies.
+   */
+  readonly publicKey?: string;
 }
 
-/** What the buyer gets back. The custodial private key never leaves the server. */
+/** What the buyer gets back. A private key never appears here: the custodial one stays in server custody, a client-custody one was never seen. */
 export interface AgentRegistration {
   readonly agentId: string;
   /** Present this as `agentToken` on every subsequent tool call. */
   readonly agentToken: string;
+  /**
+   * The Merchant this registration is with — a client-custody signer needs it
+   * to compose mandate payloads (`agentId`/`merchantId` are signed fields).
+   */
+  readonly merchantId: string;
   /** The Agent's Ed25519 public key (base64 SPKI DER). */
   readonly publicKey: string;
+  readonly custody: AgentCustody;
   readonly cap: MoneyView;
   readonly createdAt: string;
 }
@@ -76,7 +128,14 @@ export async function registerAgent(
   const cap = capPaiseFromInput(input.capPaise);
   const agentId = newId('agent');
   const agentToken = newAgentToken();
-  const keypair = generateSigningKeypair();
+  // Client custody: the buyer brought its own public key, so the server mints
+  // nothing and holds nothing. Custodial: generate the keypair as ever.
+  const clientPublicKey = input.publicKey === undefined ? null : publicKeyFromInput(input.publicKey);
+  const keyMaterial =
+    clientPublicKey === null
+      ? generateSigningKeypair()
+      : { publicKey: clientPublicKey, privateKey: null };
+  const custody = agentCustody(keyMaterial);
 
   // ADR-0003: the Agent row and its `agent.registered` event commit together.
   // The payload carries no secret — the public key, never the token or the
@@ -88,8 +147,8 @@ export async function registerAgent(
         id: agentId,
         merchantId,
         token: agentToken,
-        publicKey: keypair.publicKey,
-        privateKey: keypair.privateKey,
+        publicKey: keyMaterial.publicKey,
+        privateKey: keyMaterial.privateKey,
         capPaise: cap,
       })
       .returning();
@@ -97,7 +156,7 @@ export async function registerAgent(
       type: 'agent.registered',
       merchantId,
       orderId: null,
-      payload: { agentId, capPaise: cap, publicKey: keypair.publicKey },
+      payload: { agentId, capPaise: cap, publicKey: keyMaterial.publicKey, custody },
     });
     return rows;
   });
@@ -108,7 +167,9 @@ export async function registerAgent(
   return {
     agentId,
     agentToken,
-    publicKey: keypair.publicKey,
+    merchantId,
+    publicKey: keyMaterial.publicKey,
+    custody,
     cap: moneyView(cap),
     createdAt: inserted.createdAt.toISOString(),
   };

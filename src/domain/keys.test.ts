@@ -1,5 +1,6 @@
+import { generateKeyPairSync } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
-import { generateSigningKeypair, signMessage, verifyMessage } from './keys.js';
+import { generateSigningKeypair, isEd25519PublicKey, signMessage, verifyMessage } from './keys.js';
 
 describe('Ed25519 signing keys', () => {
   it('round-trips: a message signed with the private key verifies with the public key', () => {
@@ -37,5 +38,31 @@ describe('Ed25519 signing keys', () => {
 
   it('mints a distinct keypair every time', () => {
     expect(generateSigningKeypair().publicKey).not.toBe(generateSigningKeypair().publicKey);
+  });
+});
+
+describe('isEd25519PublicKey', () => {
+  it('accepts a key in the wire encoding — including one generated client-side', () => {
+    // The T6 registration gate: a client-custody buyer generates its own
+    // keypair and submits only the public half, in exactly this encoding.
+    expect(isEd25519PublicKey(generateSigningKeypair().publicKey)).toBe(true);
+  });
+
+  it('rejects garbage that is not base64 DER at all', () => {
+    for (const value of ['', 'not-a-key', '!!!!', 'aGVsbG8=']) {
+      expect(isEd25519PublicKey(value)).toBe(false);
+    }
+  });
+
+  it('rejects a private key — the wrong half must never pass as a public key', () => {
+    expect(isEd25519PublicKey(generateSigningKeypair().privateKey)).toBe(false);
+  });
+
+  it('rejects a valid public key of a different algorithm', () => {
+    // A well-formed SPKI DER key that is not Ed25519 would verify nothing the
+    // signer produces — reject it at the door, not at first signature check.
+    const { publicKey } = generateKeyPairSync('ec', { namedCurve: 'P-256' });
+    const spki = publicKey.export({ type: 'spki', format: 'der' }).toString('base64');
+    expect(isEd25519PublicKey(spki)).toBe(false);
   });
 });

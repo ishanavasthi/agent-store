@@ -33,7 +33,12 @@ export type RefusalCode =
   | 'INTENT_CONSUMED'
   /** T4: the pinned price hash no longer matches the live catalog. Recoverable — re-run create_cart. */
   | 'PRICE_CHANGED'
-  /** T4: a stored mandate fails signature, chain-hash, or total verification. Not recoverable. */
+  /**
+   * T4: a stored mandate fails signature, chain-hash, or total verification.
+   * T6 widens it to a *submitted* signature from a client-custody Agent that
+   * does not verify against its registered public key. Not recoverable: that
+   * exact mandate can never become valid — the buyer signs a fresh one.
+   */
   | 'INVALID_MANDATE';
 
 export interface RefusalPayload {
@@ -90,7 +95,18 @@ export type ValidationErrorCode =
   // VARIANT_NOT_FOUND — a mandate that EXISTS but fails signature or chain
   // verification is policy, and refuses with INVALID_MANDATE instead.
   | 'INTENT_NOT_FOUND'
-  | 'CART_NOT_FOUND';
+  | 'CART_NOT_FOUND'
+  // T6 — split custody (ADR-0004):
+  /** A registration `publicKey` that is not a usable base64 SPKI DER Ed25519 key. */
+  | 'INVALID_PUBLIC_KEY'
+  /**
+   * Signature arguments that contradict the Agent's custody: a client-custody
+   * Agent omitted the locally-computed signature (or `createdAt`) a step
+   * requires, or a custodial Agent supplied one (the server signs for it).
+   */
+  | 'CUSTODY_MISMATCH'
+  /** A client-minted `createdAt` that is not an ISO-8601 timestamp. */
+  | 'INVALID_CREATED_AT';
 
 /**
  * A malformed or unsatisfiable request. Deliberately a *different shape* from

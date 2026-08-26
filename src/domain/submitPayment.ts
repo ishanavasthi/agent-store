@@ -4,6 +4,7 @@ import type { StorefrontDeps } from '../deps.js';
 import type { AgentRow, OrderStatus, PaymentMandateRow } from '../db/schema.js';
 import {
   agents,
+  cartMandates,
   intentMandates,
   orderItems,
   orders,
@@ -20,13 +21,21 @@ import {
   parseCartMandatePayload,
   parseIntentMandatePayload,
   parsePaymentMandatePayload,
-  signMandate,
   verifyMandateChain,
   verifyMandateSignature,
   type CartItem,
   type PaymentMandatePayload,
 } from './mandates.js';
-import { requireCartMandate, requireMerchantSigningKey, type CartLineView } from './mandateFlow.js';
+import {
+  agentSignatureVerifies,
+  mandateCreatedAt,
+  requireCartMandate,
+  requireMerchantSigningKey,
+  resolveCartSignature,
+  resolveSigningMode,
+  signOrAdopt,
+  type CartLineView,
+} from './mandateFlow.js';
 import { moneyView, paise, type MoneyView } from './money.js';
 import { Refusal, type RefusalPayload } from './refusal.js';
 
@@ -35,7 +44,8 @@ import { Refusal, type RefusalPayload } from './refusal.js';
  * "the mandate chain is the only purchase path"; T1's tokens-only checkout is
  * gone). Shape preserved from the walking skeleton: four ordered phases —
  *   1. resolve the Cart mandate being paid,
- *   2. compose and custodially sign the Payment mandate,
+ *   2. compose the Payment mandate — custodially signed by the server, or
+ *      already signed by a client-custody Agent (ADR-0004),
  *   3. **the trust gate** — verify the whole chain and enforce policy (issue
  *      #6: idempotency, Budget, Cap, intent consumption); a Refusal returns
  *      from here with nothing persisted and the gateway never touched, and a
@@ -53,6 +63,17 @@ export interface SubmitPaymentRequest {
   readonly cartHash: string;
   /** Buyer-minted, scoped Agent×Merchant (DECISIONS 2026-08-23 idempotency). */
   readonly idempotencyKey: string;
+  /**
+   * Client custody only (ADR-0004): the Agent's detached signature over the
+   * exact Cart mandate payload create_cart returned — the deferred agent-side
+   * cart signature the trust gate verifies and, on success, persists onto the
+   * cart row.
+   */
+  readonly cartSignature?: string | undefined;
+  /** Client custody only: the `createdAt` the Agent put in the Payment payload it signed. */
+  readonly paymentCreatedAt?: string | undefined;
+  /** Client custody only: the Agent's detached signature over the canonical Payment payload. */
+  readonly paymentSignature?: string | undefined;
 }
 
 export interface SubmitPaymentResult {
@@ -84,16 +105,26 @@ export async function submitPayment(
   const cartRow = await requireCartMandate(db, agent, request.cartHash);
   const cart = parseCartMandatePayload(cartRow.payload);
 
-  // --- 2. Compose and custodially sign the Payment mandate ------------------
+  // --- 2. Compose the Payment mandate — custodially or client-signed --------
+  // Custody splits here (ADR-0004): a custodial Agent's payload is composed
+  // and signed by the server; a client-custody Agent minted `createdAt` and
+  // signed the payload itself, and must also carry the deferred agent-side
+  // Cart signature (create_cart stored NULL for it). Arguments contradicting
+  // the Agent's custody are validation errors, not Refusals.
+  const signing = resolveSigningMode(agent, 'submit_payment', {
+    createdAt: request.paymentCreatedAt,
+    signature: request.paymentSignature,
+  });
+  const clientCartSignature = resolveCartSignature(signing, request.cartSignature);
   const paymentPayload: PaymentMandatePayload = {
     agentId: agent.id,
     merchantId,
     cartHash: cartRow.hash,
     idempotencyKey: request.idempotencyKey,
-    createdAt: new Date().toISOString(),
+    createdAt: mandateCreatedAt(signing),
   };
   const paymentHash = hashMandate(paymentPayload);
-  const paymentSignature = signMandate(agent.privateKey, paymentPayload);
+  const paymentSignature = signOrAdopt(signing, paymentPayload);
 
   // --- 3. Trust gate --------------------------------------------------------
   // A Refusal from anywhere in this gate means zero rows persisted and the
@@ -171,20 +202,28 @@ export async function submitPayment(
 
   const merchantKey = await requireMerchantSigningKey(db, merchantId);
 
-  // Stored signatures verify against the live public keys, and the hashes bind
-  // Intent → Cart → Payment with consistent totals. One changed byte anywhere
-  // breaks this (src/domain/keys.ts's contract).
+  // Every agent-side and merchant-side signature verifies against the live
+  // public keys, and the hashes bind Intent → Cart → Payment with consistent
+  // totals. One changed byte anywhere breaks this (src/domain/keys.ts's
+  // contract). Custody decides where the agent's Cart and Payment signatures
+  // come from (ADR-0004): custodial reads the stored ones the server made;
+  // client custody verifies the ones supplied with this call — the server
+  // holds no key to make them, and the Payment signature is checked here for
+  // exactly that reason (custodially it was just computed above).
+  const agentCartSignature = clientCartSignature ?? cartRow.agentSignature;
   const signaturesValid =
+    agentCartSignature !== null &&
     verifyMandateSignature(agent.publicKey, intent, intentRow.agentSignature) &&
-    verifyMandateSignature(agent.publicKey, cart, cartRow.agentSignature) &&
-    verifyMandateSignature(merchantKey.publicKey, cart, cartRow.merchantSignature);
+    verifyMandateSignature(agent.publicKey, cart, agentCartSignature) &&
+    verifyMandateSignature(merchantKey.publicKey, cart, cartRow.merchantSignature) &&
+    agentSignatureVerifies(signing, agent.publicKey, paymentPayload, paymentSignature);
   const chain = verifyMandateChain(intent, cart, paymentPayload);
   if (!signaturesValid || !chain.ok) {
     return refuse({
       code: 'INVALID_MANDATE',
       reason: signaturesValid
         ? `Mandate chain failed verification: ${chain.failures.join(', ')}`
-        : 'A stored mandate signature does not verify against its public key',
+        : 'A mandate signature does not verify against its public key',
       recoverable: false,
     });
   }
@@ -356,6 +395,21 @@ export async function submitPayment(
         agentSignature: paymentSignature,
         orderId,
       });
+      // Client custody (ADR-0004): the deferred agent-side Cart signature —
+      // just verified above against the Agent's public key — is persisted onto
+      // the cart row, NULL → value, so the paid chain's stored artifact is
+      // both-sides-signed exactly like a custodial one. This is the one
+      // sanctioned write to a mandate row's signatures: it only fills a NULL
+      // (the `IS NULL` guard), never rewrites, and rolls back with the Order
+      // on any transactional Refusal.
+      if (clientCartSignature !== null) {
+        await tx
+          .update(cartMandates)
+          .set({ agentSignature: clientCartSignature })
+          .where(
+            and(eq(cartMandates.hash, cartRow.hash), isNull(cartMandates.agentSignature)),
+          );
+      }
       await appendAuditEvent(tx, {
         type: 'payment.verified',
         merchantId,
