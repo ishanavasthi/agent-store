@@ -170,9 +170,28 @@ export const orders = pgTable(
     gatewayPaymentLinkId: text('gateway_payment_link_id'),
     paymentLinkUrl: text('payment_link_url'),
 
+    /**
+     * T8: every *distinct* gateway payment id that failed against this Order —
+     * the attempt count for the bounded retry is this array's cardinality, and
+     * membership is what makes a redelivered `payment.failed` free instead of a
+     * second counted attempt. State lives here, on the row, never rebuilt from
+     * the audit log (ADR-0003: the log records, it is not read back as state).
+     */
+    declinedGatewayPaymentIds: text('declined_gateway_payment_ids')
+      .array()
+      .notNull()
+      .default([]),
+    /**
+     * T8: the structured DeclinePayload a fail-closed cancellation stored —
+     * what get_order_status reports to the buyer as a Decline, never a
+     * Refusal. Null unless status is `cancelled`.
+     */
+    cancellationReason: jsonb('cancellation_reason'),
+
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
     paidAt: timestamp('paid_at', { withTimezone: true }),
+    cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
   },
   (table) => [
     index('orders_merchant_idx').on(table.merchantId),

@@ -299,9 +299,14 @@ describe('T5 enforcement, through the MCP tools', () => {
     const orderId = submitted.body['orderId'] as string;
 
     // The trust layer said yes; the gateway then says no. That is a Decline —
-    // recorded on the Order's chain, never a payment.refused event.
+    // counted on the Order's chain (T8), never a payment.refused event.
     const hooks = gateway.failPayment(submitted.body['gatewayPaymentLinkId'] as string);
-    expect(await deliver(hooks[0]!)).toEqual({ result: 'recorded', orderId });
+    expect(await deliver(hooks[0]!)).toEqual({
+      result: 'decline_recorded',
+      orderId,
+      attempt: 1,
+      retriesRemaining: 1,
+    });
 
     const chain = await auditChain(deps.db);
     expect(chain.some((e) => e.type === 'payment.refused')).toBe(false);

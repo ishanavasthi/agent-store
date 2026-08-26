@@ -72,6 +72,13 @@ export interface GatewayWebhookEvent {
   readonly gatewayPaymentId: string | null;
   readonly gatewayPaymentLinkId: string | null;
   readonly amountPaise: Paise | null;
+  /**
+   * The gateway's own error code/description on a `payment_failed` event —
+   * the raw material of a structured Decline (T8). Null on success events and
+   * on failures the gateway did not explain.
+   */
+  readonly gatewayErrorCode: string | null;
+  readonly gatewayErrorDescription: string | null;
 }
 
 export class GatewayError extends Error {

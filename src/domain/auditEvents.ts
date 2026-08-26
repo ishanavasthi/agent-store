@@ -67,6 +67,22 @@ export const AUDIT_EVENT_TYPES = [
    * and before any money moved. Same Refusal payload shape as `agent.refused`.
    */
   'mandate.refused',
+  // T8 — the bounded-retry / fail-closed path (appended, same ALTER TYPE …
+  // ADD VALUE growth rule as T4):
+  /**
+   * The gateway said no *after* the trust layer said yes — a Decline, never a
+   * Refusal (CONTEXT.md → Failure vocabulary). One event per distinct failed
+   * payment attempt; the payload carries the attempt number and how many
+   * bounded retries remain.
+   */
+  'payment.declined',
+  /**
+   * The Order failed closed: the attempt limit (original + one bounded retry)
+   * was exhausted, so the Order is cancelled with a structured Decline as the
+   * reason, zero charge taken. Written in the same transaction as the status
+   * transition (ADR-0003).
+   */
+  'order.cancelled',
 ] as const;
 
 export type AuditEventType = (typeof AUDIT_EVENT_TYPES)[number];
@@ -135,6 +151,10 @@ export const AUDIT_EVENT_SUMMARIES: Record<AuditEventType, string> = {
     'Same idempotency key and cart hash — the original result was replayed, no second charge',
   'mandate.refused':
     'A locally signed mandate was refused — its signature did not verify against the Agent’s registered key',
+  'payment.declined':
+    'The gateway declined a payment attempt — a Decline, after the trust layer said yes',
+  'order.cancelled':
+    'Order cancelled — the payment attempt limit was exhausted, so it failed closed with zero charge',
 };
 
 /**
@@ -163,7 +183,14 @@ export type AnomalyReason =
    * blank binding: the paid transition stands, the Receipt is skipped, and
    * this anomaly says why.
    */
-  | 'missing_gateway_payment_id';
+  | 'missing_gateway_payment_id'
+  /**
+   * A success webhook arrived for an Order already cancelled (T8: the buyer
+   * was told the purchase failed closed with zero charge). The money may have
+   * moved at the gateway *after* we gave up, so this is never silently marked
+   * paid — the Order stays cancelled and the conflict is recorded for a human.
+   */
+  | 'payment_after_cancellation';
 
 /**
  * Qualify a gateway's raw event name so it can never collide with one of ours.
