@@ -30,6 +30,11 @@ The photos are generated (see below) and were always going to be.
   (`gpt-image-1`, quality medium, 1024×1024, downscaled with `sips`). Provenance, and
   the way to regenerate any image. Requires `OPENAI_API_KEY`; live billed call, not part
   of `npm test`.
+- `runs/<model>.json` — committed accuracy runs, written by `npm run ingest:accuracy`
+  (T12): per-field scores vs these labels, every raw model response, the threshold sweep
+  `AUTO_PUBLISH_THRESHOLD` is tuned on, and what the lifecycle gate published vs held.
+  Same argument as the spike's `runs/`: every accuracy number the repo claims is read off
+  a committed record, and `src/ingestion/demoRun.test.ts` pins it in CI.
 
 ## Label schema
 

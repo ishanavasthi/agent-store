@@ -62,6 +62,13 @@ export interface ProductExtraction {
    * the caption stated none, which becomes one implicit default Variant.
    */
   readonly variantLabels: ExtractedField<readonly string[]>;
+  /**
+   * Per-variant stated counts, keyed by variant label — `{"32": 3}` for
+   * "32 mein sirf 3 pieces bache". Only counts the caption states for that
+   * specific variant; a stated *total* across variants belongs in `stock`.
+   * `{}` when the caption states none, which is the common case.
+   */
+  readonly variantStock: ExtractedField<Readonly<Record<string, number>>>;
 }
 
 export interface ExtractionImage {
