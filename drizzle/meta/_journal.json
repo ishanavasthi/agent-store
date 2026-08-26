@@ -43,6 +43,13 @@
       "when": 1787702748200,
       "tag": "0005_split_key_custody",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1787707473994,
+      "tag": "0006_decline_fail_closed",
+      "breakpoints": true
     }
   ]
 }

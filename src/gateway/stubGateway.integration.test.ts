@@ -136,6 +136,8 @@ describe('in-process purchase against the stub', () => {
       gatewayPaymentId: null,
       gatewayPaymentLinkId: result.gatewayPaymentLinkId,
       amountPaise: paise(129900),
+      gatewayErrorCode: null,
+      gatewayErrorDescription: null,
     };
     const outcome = await applyGatewayWebhook(deps.db, MERCHANT_ID, event, 'stub');
     expect(outcome).toEqual({ result: 'order_paid', orderId: result.orderId });
@@ -156,13 +158,18 @@ describe('in-process purchase against the stub', () => {
     expect(anomaly.payload).toMatchObject({ reason: 'missing_gateway_payment_id' });
   });
 
-  it('Decline on demand: payment.failed is recorded and the Order never becomes paid', async () => {
+  it('Decline on demand: payment.failed is counted and the Order never becomes paid', async () => {
     await seedCatalog(deps.db, 3);
     const agent = await registeredAgent(deps);
     const result = await placeOrder(deps, agent);
 
     const declined = await deliver(deps, gateway.failPayment(result.gatewayPaymentLinkId)[0]!);
-    expect(declined).toEqual({ result: 'recorded', orderId: result.orderId });
+    expect(declined).toEqual({
+      result: 'decline_recorded',
+      orderId: result.orderId,
+      attempt: 1,
+      retriesRemaining: 1,
+    });
 
     const afterDecline = await findOrderById(deps.db, MERCHANT_ID, result.orderId);
     expect(afterDecline?.status).toBe('awaiting_payment');

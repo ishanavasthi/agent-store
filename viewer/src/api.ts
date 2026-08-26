@@ -29,6 +29,13 @@ export interface OrderStatusView {
   readonly paymentLinkUrl: string | null;
   readonly createdAt: string;
   readonly paidAt: string | null;
+  readonly cancelledAt: string | null;
+  /**
+   * The structured Decline a fail-closed cancellation stored (T8) — a gateway
+   * Decline, never a Refusal. Untyped beyond "object": rendered defensively
+   * like every payload.
+   */
+  readonly decline: Record<string, unknown> | null;
 }
 
 /** Named as the server names it (src/domain/orders.ts) — one shape, one name. */

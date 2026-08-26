@@ -104,7 +104,7 @@ The trust layer saying no, on policy, *before* money moves (over-cap, over-budge
 _Avoid_: rejection, denial, error (for policy no-s)
 
 **Decline**:
-The payment gateway saying no *after* the trust layer said yes. A Decline is never a Refusal.
+The payment gateway saying no *after* the trust layer said yes. A Decline is never a Refusal. An Order tolerates two distinct declined attempts — the original plus exactly one bounded retry on the same payment link — then **fails closed**: `cancelled`, zero charge, with a structured `DeclinePayload` (`{kind: 'decline', code, reason, attempts, gatewayErrorCode, gatewayErrorDescription}` — deliberately no `recoverable`, so it can never be mistaken for a Refusal) stored on the Order and reported at `get_order_status`. Once cancelled, an Order can never become paid; a late capture is an anomaly.
 _Avoid_: refusal (for gateway failures), payment error
 
 A malformed request (bad input, schema violation) is a plain validation error — neither a Refusal nor a Decline.

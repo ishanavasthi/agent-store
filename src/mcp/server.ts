@@ -93,7 +93,10 @@ export function createMcpServer(deps: StorefrontDeps): McpServer {
         `the human approves that link; their approval is the only way money moves. ` +
         `(6) Poll get_order_status until status is "paid" — the response then ` +
         `carries the merchant-signed Receipt proving your mandate chain led to ` +
-        `exactly this charge.`,
+        `exactly this charge. If the gateway declines the payment, the human may ` +
+        `retry the same link once; a second decline cancels the Order with zero ` +
+        `charge and get_order_status reports status "cancelled" with a structured ` +
+        `"decline" explaining why.`,
     },
   );
 
@@ -379,7 +382,11 @@ export function createMcpServer(deps: StorefrontDeps): McpServer {
         'Look up one order by the orderId returned from submit_payment. `paid` means the ' +
         'human approved the payment link and the gateway webhook confirmed it — the ' +
         'response then includes the merchant-signed Receipt (payload, signature, and the ' +
-        'merchant public key to verify it with). Requires the agentToken from register_agent.',
+        'merchant public key to verify it with). `cancelled` means the gateway declined ' +
+        'the payment and its one bounded retry, so the order failed closed with zero ' +
+        'charge — the response then carries a structured `decline` (a gateway Decline, ' +
+        'not a trust-layer refusal); buy again by starting a new purchase with a fresh ' +
+        'Intent. Requires the agentToken from register_agent.',
       inputSchema: {
         agentToken: z
           .string()
