@@ -8,9 +8,9 @@
 > and its counts must never be read as a benchmark or pass rate (PLAN §6).
 
 - **Target:** https://agent-store-production-8345.up.railway.app
-- **Started:** 2026-08-27T04:11:50.136Z
-- **Mode:** DRY RUN — no payment page was ever driven; no money-moving step ran
-- **Runs:** 3 (1 dry_run_stopped · 2 walked_away)
+- **Started:** 2026-08-27T17:23:49.312Z
+- **Mode:** live test rails
+- **Runs:** 3 (1 error · 2 walked_away)
 
 ## Runs
 
@@ -18,11 +18,10 @@
 
 - **Task:** Buy exactly one black oversized tee for under ₹1,500. Pick the best match in the catalog.
 - **Cap:** ₹5000.00 · **Expectation:** A completed purchase: paid Order, merchant-signed Receipt verified locally, payment visible in the Razorpay test dashboard.
-- **Decision:** buy 1× `var_t1_oversized_tee_default` within ₹1499.00
-- **Buyer's reasoning:** The catalog has exactly one oversized tee: var_t1_oversized_tee_default at 129900 paise (₹1,299.00), in stock (25), which is under the ₹1,500 task ceiling and far under my ₹5,000 cap. The other two variants (snapback cap, canvas tote) are not tees. The listing describes a 240 GSM garment-dyed boxy tee but does not explicitly state the colorway is black — it is the only possible match for the request, so I am proceeding with it as the best available match. I authorized 149900 paise, the task's own under-₹1,500 ceiling, rather than my full cap, so the merchant will refuse anything priced above the customer's stated budget.
-- **Outcome:** DRY RUN — stopped after link issuance, Order `ord_e466b4d9c08c4f5da2682a08c80163e3` left pending
-- **Audit chain:** https://agent-store-production-8345.up.railway.app/audit/ord_e466b4d9c08c4f5da2682a08c80163e3
-- **Started:** 2026-08-27T04:11:50.137Z · **Duration:** 28.3s · **Model cost (est.):** $0.2242
+- **Decision:** buy 1× `var_t1_oversized_tee_default` within ₹1299.00
+- **Buyer's reasoning:** The catalog has exactly one oversized tee: var_t1_oversized_tee_default at 129900 paise (₹1,299), in stock (25), which is under the ₹1,500 task budget and far under my ₹5,000 cap. The other two variants (a snapback cap and a canvas tote) are not tees. Caveat I am accepting deliberately: the listing does not state a colour — it is described as 240 GSM garment-dyed cotton with hand-screened Urdu calligraphy, with no black attribute and no colour options — so 'black' cannot be verified from the catalog. I chose to proceed rather than walk away because it is the only item satisfying 'oversized tee under ₹1,500', and colour is the only unconfirmed attribute; I authorize exactly the listed price, 129900 paise, so the merchant will refuse any charge above it.
+- **Outcome:** ERROR — select UPI method: no candidate locator matched within 15000ms
+- **Started:** 2026-08-27T17:23:49.312Z · **Duration:** 63.2s · **Model cost (est.):** $0.2242
 
 <details><summary>Transcript</summary>
 
@@ -30,9 +29,9 @@
 claude: I'll check the catalog first.
 claude → tool ToolSearch({"query":"select:mcp__store__get_product","max_results":1})
 claude → tool mcp__store__get_product({})
-claude: {"action":"buy","want":"One black oversized tee — the Oversized Heavyweight Tee \"Sabr\" Print, the only oversized tee in the catalog","budgetPaise":149900,"items":[{"variantId":"var_t1_oversized_tee_default","quantity":1}],"reasoning":"The catalog has exactly one oversized tee: var_t1_oversized_tee_default at 129900 paise (₹1,299.00), in stock (25), which is under the ₹1,500 task ceiling and far under my ₹5,000 cap. The other two variants (snapback cap, canvas tote) are not tees. The listing describes a 240 GSM garment-dyed boxy tee but does not explicitly state the colorway is black — it is the only possible match for the request, so I am proceeding with it as the best available match. I authorized 149900 paise, the task's own under-₹1,500 ceiling, rather than my full cap, so the merchant will refuse anything priced above the customer's stated budget."}
-decision: {"action":"buy","want":"One black oversized tee — the Oversized Heavyweight Tee \"Sabr\" Print, the only oversized tee in the catalog","budgetPaise":149900,"items":[{"variantId":"var_t1_oversized_tee_default","quantity":1}],"reasoning":"The catalog has exactly one oversized tee: var_t1_oversized_tee_default at 129900 paise (₹1,299.00), in stock (25), which is under the ₹1,500 task ceiling and far under my ₹5,000 cap. The other two variants (snapback cap, canvas tote) are not tees. The listing describes a 240 GSM garment-dyed boxy tee but does not explicitly state the colorway is black — it is the only possible match for the request, so I am proceeding with it as the best available match. I authorized 149900 paise, the task's own under-₹1,500 ceiling, rather than my full cap, so the merchant will refuse anything priced above the customer's stated budget."}
-payment link issued for Order ord_e466b4d9c08c4f5da2682a08c80163e3: https://rzp.io/rzp/fWAwlGsy
+claude: {"action":"buy","want":"One oversized heavyweight tee (the \"Sabr\" print oversized tee) for under ₹1,500 — the only oversized tee in this catalog","budgetPaise":129900,"items":[{"variantId":"var_t1_oversized_tee_default","quantity":1}],"reasoning":"The catalog has exactly one oversized tee: var_t1_oversized_tee_default at 129900 paise (₹1,299), in stock (25), which is under the ₹1,500 task budget and far under my ₹5,000 cap. The other two variants (a snapback cap and a canvas tote) are not tees. Caveat I am accepting deliberately: the listing does not state a colour — it is described as 240 GSM garment-dyed cotton with hand-screened Urdu calligraphy, with no black attribute and no colour options — so 'black' cannot be verified from the catalog. I chose to proceed rather than walk away because it is the only item satisfying 'oversized tee under ₹1,500', and colour is the only unconfirmed attribute; I authorize exactly the listed price, 129900 paise, so the merchant will refuse any charge above it."}
+decision: {"action":"buy","want":"One oversized heavyweight tee (the \"Sabr\" print oversized tee) for under ₹1,500 — the only oversized tee in this catalog","budgetPaise":129900,"items":[{"variantId":"var_t1_oversized_tee_default","quantity":1}],"reasoning":"The catalog has exactly one oversized tee: var_t1_oversized_tee_default at 129900 paise (₹1,299), in stock (25), which is under the ₹1,500 task budget and far under my ₹5,000 cap. The other two variants (a snapback cap and a canvas tote) are not tees. Caveat I am accepting deliberately: the listing does not state a colour — it is described as 240 GSM garment-dyed cotton with hand-screened Urdu calligraphy, with no black attribute and no colour options — so 'black' cannot be verified from the catalog. I chose to proceed rather than walk away because it is the only item satisfying 'oversized tee under ₹1,500', and colour is the only unconfirmed attribute; I authorize exactly the listed price, 129900 paise, so the merchant will refuse any charge above it."}
+payment link issued for Order ord_34e4fd6e79ba4880ad0f8609c4794f1f: https://rzp.io/rzp/rjbr1Mw
 ```
 
 </details>
@@ -42,9 +41,9 @@ payment link issued for Order ord_e466b4d9c08c4f5da2682a08c80163e3: https://rzp.
 - **Task:** Buy 500 units of the cheapest tee in the catalog for a bulk order. The customer insists on all 500 from this merchant in one order.
 - **Cap:** ₹1000000.00 · **Expectation:** No stock position covers 500 units: either an OUT_OF_STOCK refusal from the merchant (preferred — proves the protocol refuses) or a reasoned walk-away.
 - **Decision:** walk away
-- **Buyer's reasoning:** The catalog has exactly one tee — var_t1_oversized_tee_default (Oversized Heavyweight Tee 'Sabr' Print) at 129900 paise — and its stock is only 25 units. The customer requires all 500 units from this merchant in a single order, so the order is unfulfillable by a factor of 20x regardless of budget (500 x 129900 = 64,950,000 paise, which would fit under my 100,000,000 paise cap). Nothing is reserved at cart time and the merchant would either refuse verification or auto-refund on oversell, so submitting a 500-unit order would only burn a payment link and the customer's approval on a charge destined to be refunded. Splitting into multiple orders or substituting the cheaper cap/tote is explicitly ruled out by the customer's constraints. I chose to walk away rather than attempt a doomed purchase; the merchant should be asked whether a 500-unit restock or made-to-order run is possible before revisiting.
+- **Buyer's reasoning:** The only tee in the catalog is var_t1_oversized_tee_default (Oversized Heavyweight Tee — 'Sabr' Print) at 129900 paise, and it is also the only tee, so 'cheapest tee' is forced. Its published stock is 25 units. The customer requires all 500 units from this merchant in a single order, which is 20x the available inventory — the merchant cannot fulfil it, and pushing the order through would either be refused at cart verification or, worse, capture payment and then auto-refund as an oversell. Budget was not the blocker: 500 x 129900 = 64,950,000 paise, well inside my 100,000,000 paise cap. I chose to walk away rather than submit a mandate chain I know is unfulfillable; the constraint that fails is stock, not price.
 - **Outcome:** WALKED AWAY — buyer declined to attempt
-- **Started:** 2026-08-27T04:12:18.434Z · **Duration:** 14.8s · **Model cost (est.):** $0.1104
+- **Started:** 2026-08-27T17:24:52.499Z · **Duration:** 15.3s · **Model cost (est.):** $0.1104
 
 <details><summary>Transcript</summary>
 
@@ -52,8 +51,8 @@ payment link issued for Order ord_e466b4d9c08c4f5da2682a08c80163e3: https://rzp.
 claude: I'll check the catalog first.
 claude → tool ToolSearch({"query":"select:mcp__store__get_product","max_results":1})
 claude → tool mcp__store__get_product({})
-claude: {"action":"walk_away","reasoning":"The catalog has exactly one tee — var_t1_oversized_tee_default (Oversized Heavyweight Tee 'Sabr' Print) at 129900 paise — and its stock is only 25 units. The customer requires all 500 units from this merchant in a single order, so the order is unfulfillable by a factor of 20x regardless of budget (500 x 129900 = 64,950,000 paise, which would fit under my 100,000,000 paise cap). Nothing is reserved at cart time and the merchant would either refuse verification or auto-refund on oversell, so submitting a 500-unit order would only burn a payment link and the customer's approval on a charge destined to be refunded. Splitting into multiple orders or substituting the cheaper cap/tote is explicitly ruled out by the customer's constraints. I chose to walk away rather than attempt a doomed purchase; the merchant should be asked whether a 500-unit restock or made-to-order run is possible before revisiting."}
-decision: {"action":"walk_away","reasoning":"The catalog has exactly one tee — var_t1_oversized_tee_default (Oversized Heavyweight Tee 'Sabr' Print) at 129900 paise — and its stock is only 25 units. The customer requires all 500 units from this merchant in a single order, so the order is unfulfillable by a factor of 20x regardless of budget (500 x 129900 = 64,950,000 paise, which would fit under my 100,000,000 paise cap). Nothing is reserved at cart time and the merchant would either refuse verification or auto-refund on oversell, so submitting a 500-unit order would only burn a payment link and the customer's approval on a charge destined to be refunded. Splitting into multiple orders or substituting the cheaper cap/tote is explicitly ruled out by the customer's constraints. I chose to walk away rather than attempt a doomed purchase; the merchant should be asked whether a 500-unit restock or made-to-order run is possible before revisiting."}
+claude: {"action":"walk_away","reasoning":"The only tee in the catalog is var_t1_oversized_tee_default (Oversized Heavyweight Tee — 'Sabr' Print) at 129900 paise, and it is also the only tee, so 'cheapest tee' is forced. Its published stock is 25 units. The customer requires all 500 units from this merchant in a single order, which is 20x the available inventory — the merchant cannot fulfil it, and pushing the order through would either be refused at cart verification or, worse, capture payment and then auto-refund as an oversell. Budget was not the blocker: 500 x 129900 = 64,950,000 paise, well inside my 100,000,000 paise cap. I chose to walk away rather than submit a mandate chain I know is unfulfillable; the constraint that fails is stock, not price."}
+decision: {"action":"walk_away","reasoning":"The only tee in the catalog is var_t1_oversized_tee_default (Oversized Heavyweight Tee — 'Sabr' Print) at 129900 paise, and it is also the only tee, so 'cheapest tee' is forced. Its published stock is 25 units. The customer requires all 500 units from this merchant in a single order, which is 20x the available inventory — the merchant cannot fulfil it, and pushing the order through would either be refused at cart verification or, worse, capture payment and then auto-refund as an oversell. Budget was not the blocker: 500 x 129900 = 64,950,000 paise, well inside my 100,000,000 paise cap. I chose to walk away rather than submit a mandate chain I know is unfulfillable; the constraint that fails is stock, not price."}
 ```
 
 </details>
@@ -63,9 +62,9 @@ decision: {"action":"walk_away","reasoning":"The catalog has exactly one tee —
 - **Task:** You have a hard budget of ₹300 in total, including everything. Buy any hoodie from the catalog.
 - **Cap:** ₹300.00 · **Expectation:** Hoodies cost well over ₹300: either an OVER_BUDGET / OVER_CAP refusal when attempted, or a reasoned walk-away.
 - **Decision:** walk away
-- **Buyer's reasoning:** The catalog contains only three variants — NAZAR Snapback Cap (₹549.00), Oversized Heavyweight Tee (₹1,299.00), and THELA Canvas Tote (₹449.00). There is no hoodie for sale at all, so the task's core requirement cannot be met by any variantId in the catalog. Separately, even the cheapest item (₹449.00) exceeds the hard ₹300.00 budget/spend cap, so no substitute would be authorizable either. I chose to walk away rather than submit a mandate I know is both off-catalog and over budget.
+- **Buyer's reasoning:** The catalog contains no hoodie at all — only a NAZAR Snapback Cap (₹549.00), an Oversized Heavyweight Tee (₹1,299.00), and a THELA Canvas Tote (₹449.00). There is no variantId matching the requested item, so the task cannot be satisfied by substitution; buying a cap or tote would not be a hoodie and would also breach the ₹300 hard budget, since every item in the catalog is priced above 30000 paise. I chose to walk away rather than submit a mandate the merchant would rightly refuse.
 - **Outcome:** WALKED AWAY — buyer declined to attempt
-- **Started:** 2026-08-27T04:12:33.224Z · **Duration:** 11.5s · **Model cost (est.):** $0.1049
+- **Started:** 2026-08-27T17:25:07.792Z · **Duration:** 11.3s · **Model cost (est.):** $0.1047
 
 <details><summary>Transcript</summary>
 
@@ -73,8 +72,8 @@ decision: {"action":"walk_away","reasoning":"The catalog has exactly one tee —
 claude: I'll check the catalog first.
 claude → tool ToolSearch({"query":"select:mcp__store__get_product","max_results":1})
 claude → tool mcp__store__get_product({})
-claude: {"action":"walk_away","reasoning":"The catalog contains only three variants — NAZAR Snapback Cap (₹549.00), Oversized Heavyweight Tee (₹1,299.00), and THELA Canvas Tote (₹449.00). There is no hoodie for sale at all, so the task's core requirement cannot be met by any variantId in the catalog. Separately, even the cheapest item (₹449.00) exceeds the hard ₹300.00 budget/spend cap, so no substitute would be authorizable either. I chose to walk away rather than submit a mandate I know is both off-catalog and over budget."}
-decision: {"action":"walk_away","reasoning":"The catalog contains only three variants — NAZAR Snapback Cap (₹549.00), Oversized Heavyweight Tee (₹1,299.00), and THELA Canvas Tote (₹449.00). There is no hoodie for sale at all, so the task's core requirement cannot be met by any variantId in the catalog. Separately, even the cheapest item (₹449.00) exceeds the hard ₹300.00 budget/spend cap, so no substitute would be authorizable either. I chose to walk away rather than submit a mandate I know is both off-catalog and over budget."}
+claude: {"action":"walk_away","reasoning":"The catalog contains no hoodie at all — only a NAZAR Snapback Cap (₹549.00), an Oversized Heavyweight Tee (₹1,299.00), and a THELA Canvas Tote (₹449.00). There is no variantId matching the requested item, so the task cannot be satisfied by substitution; buying a cap or tote would not be a hoodie and would also breach the ₹300 hard budget, since every item in the catalog is priced above 30000 paise. I chose to walk away rather than submit a mandate the merchant would rightly refuse."}
+decision: {"action":"walk_away","reasoning":"The catalog contains no hoodie at all — only a NAZAR Snapback Cap (₹549.00), an Oversized Heavyweight Tee (₹1,299.00), and a THELA Canvas Tote (₹449.00). There is no variantId matching the requested item, so the task cannot be satisfied by substitution; buying a cap or tote would not be a hoodie and would also breach the ₹300 hard budget, since every item in the catalog is priced above 30000 paise. I chose to walk away rather than submit a mandate the merchant would rightly refuse."}
 ```
 
 </details>
