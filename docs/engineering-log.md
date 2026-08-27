@@ -8,6 +8,68 @@ Each entry is **Symptom → Cause → Fix → Lesson**. The Cause is the mechani
 
 ---
 
+## 2026-08-28 — T16 payer-bot, first real runs
+
+### The first live run died on a selector and left nothing to fix it with
+
+**Symptom** — the 2026-08-27 live suite ended `1 error · 2 walked_away`. The one
+buy attempt reached `gateway.payment_link_issued` and then failed with
+`select UPI method: no candidate locator matched within 15000ms`. The payer-bot
+was built to record which candidate matched at each step precisely for this
+moment — but the step log went to `console.log` and nowhere else, so the run
+JSON held one error string and the evidence was gone with the terminal.
+
+**Cause** — `PaymentApprover` was `(payment) => Promise<void>`: the seam had no
+channel back into the run's transcript, so `cli.ts` could only print. A step log
+that exists only on an operator's screen is not evidence.
+
+**Fix** — the approver now receives `{ record }` and every payer-bot line lands
+in the transcript *and* the terminal; a failed required step dumps the page
+(screenshot + HTML + an inventory of every visible interactive element in every
+frame) into `evals/live-runs/artifacts/`, and `PayerBotError.artifacts` carries
+the paths into the run JSON. `npm run evals:probe` mints a real test-mode link
+from a canned decision — no model quota — and dumps the page at every step, so
+selector tuning costs a browser run instead of a Claude run.
+
+### Razorpay's hosted checkout: three traps, none of them documented
+
+**Symptom** — with evidence in hand, the bot still could not pay. Three distinct
+walls, each of which looks like the same "no candidate matched" error:
+
+1. **The contact screen silently rejects fake numbers.** `9999999999` and
+   `9876543210` both draw "Please enter a valid mobile number" *on submit* — the
+   field looks accepted while typing. `7042318965` passes. Nothing states which
+   numbers are filtered.
+2. **`locator.fill()` does not satisfy the validator.** Filling the field leaves
+   the digits visible but the form invalid; `pressSequentially()` (real
+   keystrokes) is what makes checkout accept it.
+3. **Desktop checkout cannot pay by UPI at all.** Its UPI screen is a QR code
+   and a "Refresh QR" button — no UPI-ID field, nothing a bot can drive. The
+   mobile layout lists the UPI intent apps (`[data-value="upi"]`), and in test
+   mode selecting one settles the payment server-side within seconds.
+
+**Cause** — checkout serves a different flow per viewport, and the automation was
+driving the one where the payment control does not exist. The desktop QR is
+also why the S1 spike's manual takes always used a phone-shaped window.
+
+**Fix** — the payer-bot runs in a mobile browser context (spelled out in
+`payerBot.ts`, not taken from Playwright's `devices` registry so an upgrade
+cannot change what it drives), clicks "Proceed to Pay" (`#mob-payment-btn`,
+mobile-only), types the contact number, continues via
+`[data-testid="bottom-cta-button"]`, and selects `[data-value="upi"]`. Verified
+end to end against the deployment on 2026-08-28: Order paid, webhooks fired,
+merchant-signed Receipt verified locally by the buyer.
+
+**Lesson** — "no candidate locator matched" is a symptom with at least three
+unrelated causes, and a step log alone cannot tell them apart: it took a
+screenshot to see the words "Please enter a valid mobile number". When
+automating someone else's UI, capture the page, not just the trace. And the
+remaining gap is honest: `failure@razorpay` needs the UPI-ID field behind
+"Apps & UPI ID" → "Others", which this bot does not yet drive — the decline
+rehearsal's live take stays manual.
+
+---
+
 ## 2026-08-26 — T13 merchant confirmation screen
 
 ### The new `/merchant/confirmations` endpoint 500s against Neon while every test is green

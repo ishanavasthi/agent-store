@@ -49,12 +49,39 @@ Flags: `--task <id>` (repeatable) runs a subset of
 - Commit both after a real run: they are the acceptance evidence for #17,
   alongside the payments visible in the Razorpay test dashboard.
 
-## Known rough edge
+## Tuning the payer-bot without spending model quota
 
-The payer-bot's selectors against Razorpay's hosted page are candidate lists,
-not verified facts — the page is unversioned and cannot be rehearsed offline.
-The first real run may need a selector tuned; the bot's step log in the run
-JSON says exactly how far it got (see docs/engineering-log.md, T16 entry).
-If the bot fails, approving the printed link by hand (UPI → `success@razorpay`)
-still completes the run — the runner's order-status polling is the success
-signal, not the bot.
+```sh
+npm run evals:probe -- --target https://<deployment>            # inspect only
+npm run evals:probe -- --target https://<deployment> --pay      # drive it for real
+```
+
+The probe buys the cheapest in-stock variant from a **canned** decision — no
+model is asked — then opens the hosted page and dumps it at every step:
+screenshot, HTML, and an inventory of every visible interactive element in
+every frame, into `evals/probe/` (git-ignored). Inspect mode never touches a
+payment control; both modes leave a real Order on the target, as `--dry-run`
+does. `--variant <id>` picks a specific variant, `--headless` hides the browser.
+
+This is the tool to reach for whenever the bot stops paying: Razorpay's page is
+unversioned and changes without notice, and one probe run turns a selector
+guess into a diff.
+
+## What the bot actually drives (measured 2026-08-28)
+
+A **mobile** browser context, deliberately: desktop checkout offers UPI only as
+an unscannable QR, while the mobile layout lists the UPI intent apps, which
+test mode settles server-side within seconds. The steps are "Proceed to Pay"
+(`#mob-payment-btn`) → contact number, typed as keystrokes → Continue
+(`[data-testid="bottom-cta-button"]`) → `[data-value="upi"]`. Two traps behind
+that, both in docs/engineering-log.md: checkout rejects fake-looking mobile
+numbers (`9999999999`, `9876543210`) with a message it only shows on submit,
+and `fill()` leaves the field invalid where typing does not.
+
+**Known gap:** `failure@razorpay` needs the UPI-ID field behind "Apps & UPI ID"
+→ "Others", which the bot does not yet reach — the decline rehearsal's live
+take stays manual. Every step's outcome, including which candidate locator
+matched, is recorded into the run transcript; a failed required step dumps the
+page into `evals/live-runs/artifacts/` and names the files in the run JSON. If
+the bot fails anyway, approving the printed link by hand still completes the
+run — the runner's order-status polling is the success signal, not the bot.

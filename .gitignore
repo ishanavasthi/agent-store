@@ -17,3 +17,9 @@ build/
 
 # Claude Code worktrees
 .claude/
+
+# Payer-bot page evidence (screenshots + HTML of Razorpay's hosted page).
+# Local tuning material: big, binary, and Razorpay's markup, not ours. The
+# run JSON keeps the step log, which is the part worth committing.
+evals/probe/
+evals/live-runs/artifacts/

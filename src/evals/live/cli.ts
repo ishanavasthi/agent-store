@@ -84,15 +84,24 @@ async function main(): Promise<void> {
     tasks,
     {
       decide: claudeDecider({ log: console.log }),
-      approvePayment: async (payment) => {
+      approvePayment: async (payment, { record }) => {
+        // Every payer-bot line goes to BOTH the terminal and the run's
+        // transcript — the step log is the only thing that makes a selector
+        // failure fixable, and a terminal is not evidence.
+        const log = (line: string): void => {
+          console.log(line);
+          record(line.trim());
+        };
         if (args.dryRun) {
           // Validate what the payer-bot would receive, then stop cleanly.
-          await approvePaymentLink(payment.paymentLinkUrl, { dryRun: true, log: console.log });
+          await approvePaymentLink(payment.paymentLinkUrl, { dryRun: true, log });
           throw new DryRunStop();
         }
         await approvePaymentLink(payment.paymentLinkUrl, {
           headless: !args.headed,
-          log: console.log,
+          log,
+          artifactDir: path.resolve(args.outDir, 'live-runs', 'artifacts'),
+          artifactPrefix: payment.orderId,
         });
       },
       // Real rails: Razorpay settles test-mode UPI within seconds, but the

@@ -28,6 +28,7 @@
     "ingest:accuracy": "npm run build:server && node dist/ingestion/runAccuracy.js",
     "ingest:demo": "npm run build:server && node dist/ingestion/runIngestDemo.js",
     "evals:live": "npm run build:server && node dist/evals/live/cli.js",
+    "evals:probe": "npm run build:server && node dist/evals/live/probe.js",
     "failure:decline": "npm run build:server && node dist/failures/declineRehearsal.js",
     "failure:oversell": "npm run build:server && node dist/failures/oversellRehearsal.js",
     "db:migrate:prod": "node dist/db/migrate.js",

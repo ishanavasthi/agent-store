@@ -180,6 +180,44 @@ describe('the live-eval runner against the local app + gateway stub', () => {
     }
   });
 
+  it("an approver's step log lands in the run transcript, not only on a terminal", async () => {
+    // The 2026-08-27 live run failed on a payer-bot selector and left no
+    // evidence behind, because the step log only ever reached console.log.
+    const result = await runLiveEvalTask(baseUrl, task({ id: 'record' }), {
+      decide: cannedDecider([{ variantId: TEE, quantity: 1 }], 200_000),
+      approvePayment: async (payment, { record }) => {
+        record('payer-bot: select UPI method: done via [role=button ^upi]');
+        await stubApprover(payment);
+      },
+      pollIntervalMs: 50,
+    });
+
+    expect(result.outcome.kind).toBe('paid');
+    expect(result.transcript).toContain('payer-bot: select UPI method: done via [role=button ^upi]');
+  });
+
+  it('page evidence attached to an approver failure is recorded with the error', async () => {
+    const failure = Object.assign(new Error('select UPI method: no candidate locator matched'), {
+      artifacts: ['/tmp/ord_x-failed-select-upi-method.png', '/tmp/ord_x-failed-select-upi-method.elements.txt'],
+    });
+    const result = await runLiveEvalTask(baseUrl, task({ id: 'evidence' }), {
+      decide: cannedDecider([{ variantId: TEE, quantity: 1 }], 200_000),
+      approvePayment: async (_payment, { record }) => {
+        record('payer-bot: NO candidate matched — tried [role=button ^upi, text ^UPI$]');
+        throw failure;
+      },
+    });
+
+    expect(result.outcome).toEqual({
+      kind: 'error',
+      message: 'select UPI method: no candidate locator matched',
+    });
+    expect(result.transcript).toContain(
+      'payer-bot evidence: /tmp/ord_x-failed-select-upi-method.png',
+    );
+    expect(result.transcript.some((line) => line.includes('NO candidate matched'))).toBe(true);
+  });
+
   it('a decider crash is captured as an error outcome, not an unhandled throw', async () => {
     const result = await runLiveEvalTask(baseUrl, task({ id: 'crash' }), {
       decide: async () => {
