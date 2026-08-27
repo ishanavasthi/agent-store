@@ -13,6 +13,16 @@ describe('approvePaymentLink', () => {
     expect(report.mode).toBe('dry-run');
     expect(report.url).toBe('https://rzp.io/rzp/abc123');
     expect(report.steps.at(-1)).toContain('stopping before any browser launch');
+    expect(report.artifacts).toEqual([]);
+  });
+
+  it('carries page evidence on the error, so a failed step is fixable afterwards', () => {
+    const error = new PayerBotError('select UPI method: no candidate locator matched', ['a step'], [
+      '/tmp/ord_x-failed-select-upi-method.png',
+    ]);
+
+    expect(error.steps).toEqual(['a step']);
+    expect(error.artifacts).toEqual(['/tmp/ord_x-failed-select-upi-method.png']);
   });
 
   it('refuses a non-URL outright', async () => {

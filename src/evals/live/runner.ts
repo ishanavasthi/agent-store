@@ -61,6 +61,13 @@ const refusalOutcome = (error: SdkBuyerError): LiveRunOutcome => {
   return { kind: 'error', message: error.message };
 };
 
+/** Paths of any page evidence an approver attached to its failure. */
+const approverArtifacts = (error: unknown): readonly string[] => {
+  if (typeof error !== 'object' || error === null || !('artifacts' in error)) return [];
+  const artifacts = (error as { artifacts: unknown }).artifacts;
+  return Array.isArray(artifacts) ? artifacts.filter((a): a is string => typeof a === 'string') : [];
+};
+
 /** Run one task against `target` (the deployment's base URL, no trailing /). */
 export async function runLiveEvalTask(
   target: string,
@@ -128,7 +135,10 @@ export async function runLiveEvalTask(
           `payment link issued for Order ${payment.orderId}: ${payment.paymentLinkUrl}`,
         );
         log(`[${task.id}] payment link issued: ${payment.paymentLinkUrl}`);
-        await deps.approvePayment(payment);
+        // The approver's own narration belongs in the run evidence, not just
+        // on the operator's terminal: a payer-bot failure is only fixable
+        // from the step log that produced it.
+        await deps.approvePayment(payment, { record: (line) => transcript.push(line) });
       },
       ...(deps.pollIntervalMs !== undefined ? { pollIntervalMs: deps.pollIntervalMs } : {}),
       ...(deps.maxPolls !== undefined ? { maxPolls: deps.maxPolls } : {}),
@@ -157,6 +167,11 @@ export async function runLiveEvalTask(
         log(`[${task.id}] refused at ${outcome.tool}: ${outcome.code}`);
       }
       return finish(decision, outcome);
+    }
+    // Structurally, not by importing the payer-bot: the approver is a seam,
+    // and anything that carries page evidence gets it into the run JSON.
+    for (const artifact of approverArtifacts(error)) {
+      transcript.push(`payer-bot evidence: ${artifact}`);
     }
     return finish(decision, {
       kind: 'error',

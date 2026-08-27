@@ -68,12 +68,25 @@ export type BuyerDecider = (
 ) => Promise<DeciderResult>;
 
 /**
+ * What an approver may write into the run's evidence. The Playwright
+ * payer-bot's step log is the tuning evidence for Razorpay's undocumented
+ * hosted page, and it is worthless if it only ever reaches a terminal — the
+ * 2026-08-27 run failed on a selector and left nothing behind to fix it with.
+ */
+export interface ApproverContext {
+  readonly record: (line: string) => void;
+}
+
+/**
  * Injected seam #2: the consent step. The real implementation is the
  * Playwright payer-bot driving the Razorpay-hosted link; CI completes the
  * payment on the stub gateway and posts the synthetic webhooks. Throwing
  * `DryRunStop` aborts the run cleanly after the Payment Link is issued.
  */
-export type PaymentApprover = (payment: PaymentLinkView) => Promise<void>;
+export type PaymentApprover = (
+  payment: PaymentLinkView,
+  context: ApproverContext,
+) => Promise<void>;
 
 /** How one run ended. Exactly one of these per task. */
 export type LiveRunOutcome =
