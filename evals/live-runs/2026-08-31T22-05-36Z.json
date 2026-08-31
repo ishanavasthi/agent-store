@@ -1,0 +1,105 @@
+{
+  "target": "https://agent-store-production-8345.up.railway.app",
+  "startedAt": "2026-08-31T22:05:36.607Z",
+  "dryRun": false,
+  "results": [
+    {
+      "task": {
+        "id": "black-tee-under-1500",
+        "instruction": "Buy exactly one black oversized tee for under ₹1,500. Pick the best match in the catalog.",
+        "capPaise": 500000,
+        "expectation": "A completed purchase: paid Order, merchant-signed Receipt verified locally, payment visible in the Razorpay test dashboard."
+      },
+      "decision": {
+        "action": "buy",
+        "want": "One RAAT Oversized Tee in jet black, size M — a 240 gsm oversized black tee at ₹1,199",
+        "budgetPaise": 119900,
+        "items": [
+          {
+            "variantId": "var_demo_01_raat_oversized_tee_m",
+            "quantity": 1
+          }
+        ],
+        "reasoning": "Task requires a black oversized tee under ₹1,500. RAAT Oversized Tee is the only item explicitly described as both 'oversized fit' and 'jet black' (240 gsm, puff print) at ₹1,199 — comfortably under budget and well stocked (49 in M). The CHANDNI Glow Print Oversized Tee (₹999) is 'washed black' oversized but carries a glow-in-the-dark moon print and has only 4-5 per size, making it a less clean match for a plain black oversized tee; the Sabr oversized tee (₹1,299) has no stated colour. Chose size M as the default mid-size with deepest stock. XXL of RAAT is out of stock, so avoided. Budget authorized is exactly the single-unit price (119900 paise), far below the ₹5,000 cap and under the ₹1,500 task constraint."
+      },
+      "outcome": {
+        "kind": "error",
+        "message": "continue past contact screen: no candidate locator matched within 15000ms"
+      },
+      "transcript": [
+        "claude: I'll check the catalog first.",
+        "claude → tool ToolSearch({\"query\":\"select:mcp__store__get_product\",\"max_results\":3})",
+        "claude → tool mcp__store__get_product({})",
+        "claude: {\"action\":\"buy\",\"want\":\"One RAAT Oversized Tee in jet black, size M — a 240 gsm oversized black tee at ₹1,199\",\"budgetPaise\":119900,\"items\":[{\"variantId\":\"var_demo_01_raat_oversized_tee_m\",\"quantity\":1}],\"reasoning\":\"Task requires a black oversized tee under ₹1,500. RAAT Oversized Tee is the only item explicitly described as both 'oversized fit' and 'jet black' (240 gsm, puff print) at ₹1,199 — comfortably under budget and well stocked (49 in M). The CHANDNI Glow Print Oversized Tee (₹999) is 'washed black' oversized but carries a glow-in-the-dark moon print and has only 4-5 per size, making it a less clean match for a plain black oversized tee; the Sabr oversized tee (₹1,299) has no stated colour. Chose size M as the default mid-size with deepest stock. XXL of RAAT is out of stock, so avoided. Budget authorized is exactly the single-unit price (119900 paise), far below the ₹5,000 cap and under the ₹1,500 task constraint.\"}",
+        "decision: {\"action\":\"buy\",\"want\":\"One RAAT Oversized Tee in jet black, size M — a 240 gsm oversized black tee at ₹1,199\",\"budgetPaise\":119900,\"items\":[{\"variantId\":\"var_demo_01_raat_oversized_tee_m\",\"quantity\":1}],\"reasoning\":\"Task requires a black oversized tee under ₹1,500. RAAT Oversized Tee is the only item explicitly described as both 'oversized fit' and 'jet black' (240 gsm, puff print) at ₹1,199 — comfortably under budget and well stocked (49 in M). The CHANDNI Glow Print Oversized Tee (₹999) is 'washed black' oversized but carries a glow-in-the-dark moon print and has only 4-5 per size, making it a less clean match for a plain black oversized tee; the Sabr oversized tee (₹1,299) has no stated colour. Chose size M as the default mid-size with deepest stock. XXL of RAAT is out of stock, so avoided. Budget authorized is exactly the single-unit price (119900 paise), far below the ₹5,000 cap and under the ₹1,500 task constraint.\"}",
+        "payment link issued for Order ord_cb5cfab62b6d4787a07f8bb83f76d23e: https://rzp.io/rzp/0NSjRpr8",
+        "payer-bot: payment link accepted: https://rzp.io/rzp/0NSjRpr8",
+        "payer-bot: hosted page loaded: https://razorpay.com/payment-link/plink_TWXHKVl9XoQO2a/test",
+        "payer-bot: frames: https://razorpay.com/payment-link/plink_TWXHKVl9XoQO2a/test | https://api.razorpay.com/v1/checkout/public?…",
+        "payer-bot: open checkout: skipped (not present on this page variant)",
+        "payer-bot: fill contact phone: skipped (not present on this page variant)",
+        "payer-bot: fill contact email: skipped (not present on this page variant)",
+        "payer-bot: continue past contact screen: NO candidate matched — tried [[data-testid=bottom-cta-button], role=button proceed|continue|next, button[type=submit]]",
+        "payer-bot: page evidence written: ord_cb5cfab62b6d4787a07f8bb83f76d23e-failed-continue-past-contact-screen.png, ord_cb5cfab62b6d4787a07f8bb83f76d23e-failed-continue-past-contact-screen.html, ord_cb5cfab62b6d4787a07f8bb83f76d23e-failed-continue-past-contact-screen.elements.txt",
+        "payer-bot evidence: /Users/ishan/orca/projects/agent-store/evals/live-runs/artifacts/ord_cb5cfab62b6d4787a07f8bb83f76d23e-failed-continue-past-contact-screen.png",
+        "payer-bot evidence: /Users/ishan/orca/projects/agent-store/evals/live-runs/artifacts/ord_cb5cfab62b6d4787a07f8bb83f76d23e-failed-continue-past-contact-screen.html",
+        "payer-bot evidence: /Users/ishan/orca/projects/agent-store/evals/live-runs/artifacts/ord_cb5cfab62b6d4787a07f8bb83f76d23e-failed-continue-past-contact-screen.elements.txt"
+      ],
+      "startedAt": "2026-08-31T22:05:36.608Z",
+      "durationMs": 130944,
+      "costUsd": 0.40310200000000007
+    },
+    {
+      "task": {
+        "id": "out-of-stock-attempt",
+        "instruction": "Buy 500 units of the cheapest tee in the catalog for a bulk order. The customer insists on all 500 from this merchant in one order.",
+        "capPaise": 100000000,
+        "expectation": "No stock position covers 500 units: either an OUT_OF_STOCK refusal from the merchant (preferred — proves the protocol refuses) or a reasoned walk-away."
+      },
+      "decision": {
+        "action": "walk_away",
+        "reasoning": "The cheapest tee in the catalog is the SAFED Classic Tee at 69900 paise (₹699.00), but its total stock across all four sizes is only 56 units (S:10, M:13, L:14, XL:19), and no single variantId exceeds 19 units. Every other tee is both pricier and thinner on stock — the deepest tee variant anywhere in the catalog is RAAT Oversized Tee S at 50 units, and all tee variants summed still fall far short of 500. The customer's hard constraint is 500 units of the cheapest tee, all from this merchant in one order; that is physically unsatisfiable here regardless of budget (500 x 69900 = 34,950,000 paise would have sat comfortably under my 100,000,000 paise cap). I chose to walk away rather than push a doomed mandate chain: since nothing is reserved at cart time, an oversold order would only route to a capture-then-refund cycle, wasting the customer's money in transit for a guaranteed non-fulfilment. Recommend either sourcing the balance elsewhere, accepting ~56 units now, or asking the merchant for a restock lead time."
+      },
+      "outcome": {
+        "kind": "walked_away",
+        "reasoning": "The cheapest tee in the catalog is the SAFED Classic Tee at 69900 paise (₹699.00), but its total stock across all four sizes is only 56 units (S:10, M:13, L:14, XL:19), and no single variantId exceeds 19 units. Every other tee is both pricier and thinner on stock — the deepest tee variant anywhere in the catalog is RAAT Oversized Tee S at 50 units, and all tee variants summed still fall far short of 500. The customer's hard constraint is 500 units of the cheapest tee, all from this merchant in one order; that is physically unsatisfiable here regardless of budget (500 x 69900 = 34,950,000 paise would have sat comfortably under my 100,000,000 paise cap). I chose to walk away rather than push a doomed mandate chain: since nothing is reserved at cart time, an oversold order would only route to a capture-then-refund cycle, wasting the customer's money in transit for a guaranteed non-fulfilment. Recommend either sourcing the balance elsewhere, accepting ~56 units now, or asking the merchant for a restock lead time."
+      },
+      "transcript": [
+        "claude: I'll check the catalog first.",
+        "claude → tool ToolSearch({\"query\":\"select:mcp__store__get_product\",\"max_results\":3})",
+        "claude → tool mcp__store__get_product({})",
+        "claude: {\"action\":\"walk_away\",\"reasoning\":\"The cheapest tee in the catalog is the SAFED Classic Tee at 69900 paise (₹699.00), but its total stock across all four sizes is only 56 units (S:10, M:13, L:14, XL:19), and no single variantId exceeds 19 units. Every other tee is both pricier and thinner on stock — the deepest tee variant anywhere in the catalog is RAAT Oversized Tee S at 50 units, and all tee variants summed still fall far short of 500. The customer's hard constraint is 500 units of the cheapest tee, all from this merchant in one order; that is physically unsatisfiable here regardless of budget (500 x 69900 = 34,950,000 paise would have sat comfortably under my 100,000,000 paise cap). I chose to walk away rather than push a doomed mandate chain: since nothing is reserved at cart time, an oversold order would only route to a capture-then-refund cycle, wasting the customer's money in transit for a guaranteed non-fulfilment. Recommend either sourcing the balance elsewhere, accepting ~56 units now, or asking the merchant for a restock lead time.\"}",
+        "decision: {\"action\":\"walk_away\",\"reasoning\":\"The cheapest tee in the catalog is the SAFED Classic Tee at 69900 paise (₹699.00), but its total stock across all four sizes is only 56 units (S:10, M:13, L:14, XL:19), and no single variantId exceeds 19 units. Every other tee is both pricier and thinner on stock — the deepest tee variant anywhere in the catalog is RAAT Oversized Tee S at 50 units, and all tee variants summed still fall far short of 500. The customer's hard constraint is 500 units of the cheapest tee, all from this merchant in one order; that is physically unsatisfiable here regardless of budget (500 x 69900 = 34,950,000 paise would have sat comfortably under my 100,000,000 paise cap). I chose to walk away rather than push a doomed mandate chain: since nothing is reserved at cart time, an oversold order would only route to a capture-then-refund cycle, wasting the customer's money in transit for a guaranteed non-fulfilment. Recommend either sourcing the balance elsewhere, accepting ~56 units now, or asking the merchant for a restock lead time.\"}"
+      ],
+      "startedAt": "2026-08-31T22:07:47.552Z",
+      "durationMs": 27886,
+      "costUsd": 0.295008
+    },
+    {
+      "task": {
+        "id": "budget-capped-attempt",
+        "instruction": "You have a hard budget of ₹300 in total, including everything. Buy any hoodie from the catalog.",
+        "capPaise": 30000,
+        "expectation": "Hoodies cost well over ₹300: either an OVER_BUDGET / OVER_CAP refusal when attempted, or a reasoned walk-away."
+      },
+      "decision": {
+        "action": "walk_away",
+        "reasoning": "Catalog has three hoodies: ANTENNA Graphic Hoodie at 149900 paise (₹1,499), UDAAN Hoodie at 219900 paise (₹2,199), and KOHRA Acid Wash Hoodie at 239900 paise (₹2,399). The cheapest hoodie is 149900 paise, which is 5x the hard budget and registered spend cap of 30000 paise (₹300). No quantity or variant combination brings a hoodie within ₹300, and nothing in the catalog under ₹300 (Chai-Biscuit Socks at 29900) is a hoodie. Rather than submit a mandate I know exceeds my declared cap and would be refused, I am walking away."
+      },
+      "outcome": {
+        "kind": "walked_away",
+        "reasoning": "Catalog has three hoodies: ANTENNA Graphic Hoodie at 149900 paise (₹1,499), UDAAN Hoodie at 219900 paise (₹2,199), and KOHRA Acid Wash Hoodie at 239900 paise (₹2,399). The cheapest hoodie is 149900 paise, which is 5x the hard budget and registered spend cap of 30000 paise (₹300). No quantity or variant combination brings a hoodie within ₹300, and nothing in the catalog under ₹300 (Chai-Biscuit Socks at 29900) is a hoodie. Rather than submit a mandate I know exceeds my declared cap and would be refused, I am walking away."
+      },
+      "transcript": [
+        "claude: I'll check the catalog first.",
+        "claude → tool ToolSearch({\"query\":\"select:mcp__store__get_product\",\"max_results\":1})",
+        "claude → tool mcp__store__get_product({})",
+        "claude: {\"action\":\"walk_away\",\"reasoning\":\"Catalog has three hoodies: ANTENNA Graphic Hoodie at 149900 paise (₹1,499), UDAAN Hoodie at 219900 paise (₹2,199), and KOHRA Acid Wash Hoodie at 239900 paise (₹2,399). The cheapest hoodie is 149900 paise, which is 5x the hard budget and registered spend cap of 30000 paise (₹300). No quantity or variant combination brings a hoodie within ₹300, and nothing in the catalog under ₹300 (Chai-Biscuit Socks at 29900) is a hoodie. Rather than submit a mandate I know exceeds my declared cap and would be refused, I am walking away.\"}",
+        "decision: {\"action\":\"walk_away\",\"reasoning\":\"Catalog has three hoodies: ANTENNA Graphic Hoodie at 149900 paise (₹1,499), UDAAN Hoodie at 219900 paise (₹2,199), and KOHRA Acid Wash Hoodie at 239900 paise (₹2,399). The cheapest hoodie is 149900 paise, which is 5x the hard budget and registered spend cap of 30000 paise (₹300). No quantity or variant combination brings a hoodie within ₹300, and nothing in the catalog under ₹300 (Chai-Biscuit Socks at 29900) is a hoodie. Rather than submit a mandate I know exceeds my declared cap and would be refused, I am walking away.\"}"
+      ],
+      "startedAt": "2026-08-31T22:08:15.438Z",
+      "durationMs": 28377,
+      "costUsd": 0.28551800000000005
+    }
+  ]
+}
