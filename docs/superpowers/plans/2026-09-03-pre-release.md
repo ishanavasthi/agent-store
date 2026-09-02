@@ -103,11 +103,12 @@ Only seam callers see: `ExtractionModel`. Internal seam: `ExtractionProviderConf
 
 ### S2.1 Zod-validate the payload, pin the schema, make the OpenAI adapter testable
 Blocked by: none (parallel with WS1).
-- [ ] **Golden first**: capture the exact request body the current code sends (one item with image, one without) into `fixtures/extraction/openai-responses-request.golden.json` via an injected fetch, before touching the adapter.
-- [ ] `payloadSchema.ts`: `modelPayloadSchema` (zod; `{value, confidence}` per field, `variantStock` as `{label, count}[]`), `responseJsonSchema()` = `z.toJSONSchema(...)` with override (nullable → `type:[T,'null']`, drop int min/max, drop `$schema`) — test asserts deep-equality with the current `RESPONSE_SCHEMA` literal.
-- [ ] `toExtraction.ts`: move `toExtraction`/`field`/`toVariantStockRecord`/`nonEmpty` verbatim; `parsePayload(rawText)` = JSON.parse + `safeParse`, `ExtractionError` with zod path + 300-char snippet. Semantic rules (confidence clamp, null→0, `parseRupeePrice`, never invent stock) stay here.
-- [ ] `openaiResponsesModel.ts`: today's code on the shared modules; `fetchImpl?`; `reasoning.effort` only for `gpt-5*`.
-- [ ] Tests: schema pin; zod accepts all 28 `records[i].raw` in `fixtures/demo-dataset/runs/gpt-5-mini.json` and re-scoring via `scoreDemoItem` reproduces the committed summary; rejects map-shaped `variantStock`, string stock, missing key, extra key; request byte-equals golden; envelope walk with a leading reasoning item; refusal; `status: incomplete`; non-2xx carries the provider body. `demoRun.test.ts` untouched and green.
+Landed: PR #48, 2026-09-03
+- [x] **Golden first**: capture the exact request body the current code sends (one item with image, one without) into `fixtures/extraction/openai-responses-request.golden.json` via an injected fetch, before touching the adapter.
+- [x] `payloadSchema.ts`: `modelPayloadSchema` (zod; `{value, confidence}` per field, `variantStock` as `{label, count}[]`), `responseJsonSchema()` = `z.toJSONSchema(...)` with override (nullable → `type:[T,'null']`, drop int min/max, drop `$schema`) — test asserts deep-equality with the current `RESPONSE_SCHEMA` literal.
+- [x] `toExtraction.ts`: move `toExtraction`/`field`/`toVariantStockRecord`/`nonEmpty` verbatim; `parsePayload(rawText)` = JSON.parse + `safeParse`, `ExtractionError` with zod path + 300-char snippet. Semantic rules (confidence clamp, null→0, `parseRupeePrice`, never invent stock) stay here.
+- [x] `openaiResponsesModel.ts`: today's code on the shared modules; `fetchImpl?`; `reasoning.effort` only for `gpt-5*`.
+- [x] Tests: schema pin; zod accepts all 28 `records[i].raw` in `fixtures/demo-dataset/runs/gpt-5-mini.json` and re-scoring via `scoreDemoItem` reproduces the committed summary; rejects map-shaped `variantStock`, string stock, missing key, extra key; request byte-equals golden; envelope walk with a leading reasoning item; refusal; `status: incomplete`; non-2xx carries the provider body. `demoRun.test.ts` untouched and green.
 
 ### S2.2 Provider config, Chat Completions adapter, retries
 Blocked by: S2.1.

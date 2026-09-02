@@ -8,6 +8,53 @@ Each entry is **Symptom → Cause → Fix → Lesson**. The Cause is the mechani
 
 ---
 
+## 2026-09-03 — S2.1 zod payload + golden request
+
+### zod reports an unrecognised key at an empty path, so the offending key names itself or nothing does
+
+**Symptom** — `parsePayload` was supposed to name the zod path of whatever
+drifted. For a payload carrying an extra key it said
+``did not match the schema at `(root)` ``, which is true and useless: the one
+thing a reviewer needs — *which* key — was only buried in the issue's prose.
+
+**Cause** — a `unrecognized_keys` issue in zod 4 is raised *against the object
+that owns the keys*, not against the keys themselves, so `issue.path` is `[]`
+for a top-level payload. The offending names live on `issue.keys`, a property
+that exists on that issue variant alone. `issue.path.join('.')` is the obvious
+formatting and it silently discards them.
+
+**Fix** — `issuePath` in `extraction/toExtraction.ts` special-cases
+`code === 'unrecognized_keys'` and appends `issue.keys` to the parent path,
+so the message reads ``at `colour` ``. The test asserts the key by name.
+
+**Lesson** — when formatting a zod issue for a human, `path` is not the whole
+address. `unrecognized_keys` (and `invalid_union`, which nests its own issues)
+carry the specifics on variant-only properties, and a generic formatter drops
+exactly the detail the error existed to carry.
+
+### `node --experimental-strip-types` cannot run this repo's source; the golden capture had to go through vitest
+
+**Symptom** — capturing the pre-refactor request body meant importing
+`src/ingestion/openaiExtractionModel.ts` from a throwaway script. Run as
+`node --experimental-strip-types capture.ts`, it died with
+`ERR_MODULE_NOT_FOUND: .../src/ingestion/price.js`.
+
+**Cause** — the repo is `NodeNext` ESM, so every internal import is written
+`./price.js` and resolved to `price.ts` by the TypeScript compiler and by
+vitest's resolver. Node's own type stripping does no such remapping: it loads
+the specifier literally, and `price.js` does not exist until `npm run build`.
+This is why `package.json` scripts run `npm run build && node dist/...` rather
+than stripping types — `npm run dev` is the one exception and it only works
+because it enters at a file whose transitive imports are all resolved the same
+way it is, i.e. not at all until you hit one.
+
+**Fix** — the capture ran as a temporary vitest test (deleted after it wrote
+the fixture), which resolves the specifiers the same way the suite does.
+
+**Lesson** — for a one-off script against this source tree, reach for a
+throwaway `*.test.ts` and `npx vitest run` it, not `node
+--experimental-strip-types`. Anything else needs a build first.
+
 ## 2026-08-28 — T16 payer-bot, first real runs
 
 ### The first live run died on a selector and left nothing to fix it with
