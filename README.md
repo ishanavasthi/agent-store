@@ -26,6 +26,7 @@ Budget, and written to an append-only audit log a separate auditor re-checks.
 |---|---|
 | `POST /mcp` | Authless MCP (Streamable HTTP, stateless). Six tools: `get_product`, `register_agent`, `declare_intent`, `create_cart`, `submit_payment`, `get_order_status`. |
 | `POST /merchant/mcp` | The Merchant face (S1.2): a *separate* authless MCP endpoint with its own tool set — `list_held_products`, `get_held_product`, `confirm_product`, `list_my_products`, and the S1.5 reads `store_summary`, `list_recent_orders`, `get_order` — so a buyer never sees a tool that edits the catalog. Every tool takes `merchantToken` (`MERCHANT_TOKEN`) and refuses `UNKNOWN_MERCHANT_TOKEN` without a valid one. `confirm_product` is additive: it overlays what the merchant said onto the stored draft and calls the same publish gate the web confirmation screen does, and never deletes a Variant. |
+| `POST /merchant/mcp` | The Merchant face (S1.2): a *separate* authless MCP endpoint with its own tool set — `list_held_products`, `get_held_product`, `confirm_product`, `list_my_products` — so a buyer never sees a tool that edits the catalog. Every tool takes `merchantToken` (`MERCHANT_TOKEN`) and refuses `UNKNOWN_MERCHANT_TOKEN` without a valid one. `confirm_product` is additive: it overlays what the merchant said onto the stored draft and calls the same publish gate the web confirmation screen does, and never deletes a Variant. `submit_catalog_item` (S1.3) adds a Product from a caption (plus an optional public photo URL or inline base64): **extraction always runs server-side** through the same pipeline `ingest:demo` uses, so the connector never sends extracted fields — it sends the caption verbatim. Without an extraction model configured that one tool answers `EXTRACTION_NOT_CONFIGURED`; the server still boots and serves its catalog. |
 | `GET /.well-known/agent-store.json` | Discovery doc describing both protocol faces: the MCP endpoint and the REST base + endpoints, auth model, money conventions, failure shapes. |
 | `/acp/*` | The ACP-flavored REST twin (T14): `GET /acp/products`, `POST /acp/agents`, `POST /acp/intents`, `POST /acp/carts`, `POST /acp/payments`, `GET /acp/orders/:orderId` — the same core and trust layer as MCP, `Authorization: Bearer <agentToken>`. Refusals and Receipts are identical in shape on both faces. |
 | `POST /webhooks/razorpay` | Verifies the Razorpay webhook signature, then flips the domain Order to `paid` — or writes an anomaly and leaves it alone. |
@@ -132,6 +133,13 @@ saying no on policy before money moves, and always carries
 `{code, reason, recoverable, retryAfter?}`. The vocabulary is closed and lives in one union:
 `OUT_OF_STOCK`, `UNREGISTERED_AGENT`, `UNKNOWN_MERCHANT_TOKEN`, `OVER_BUDGET`, `OVER_CAP`,
 `IDEMPOTENCY_REUSE`, `INTENT_CONSUMED`, `PRICE_CHANGED`, `INVALID_MANDATE`.
+Merchant-side input problems are validation errors, not Refusals: alongside the confirmation
+codes, S1.3 adds `INVALID_SUBMISSION` (blank caption, or both image forms at once) and
+`INVALID_IMAGE` (a photo link that is not http(s), points at a loopback/private/link-local
+address, does not serve `image/*`, exceeds 4 MiB, or times out — deliberately one code, so the
+tool cannot be used as an address scanner). A third wire shape again, `{error: {code, message}}`,
+carries the server failing at something it was willing to do: `EXTRACTION_NOT_CONFIGURED` and
+`EXTRACTION_FAILED`.
 A malformed argument is a plain **validation error** with a deliberately different shape
 (`{code, message}` — no `recoverable`), so neither a buyer agent nor the rule-auditor can
 confuse the two categories. A gateway **Decline** is a third thing again and lives on the
@@ -262,6 +270,7 @@ The rest of the commands, each producing an artifact you can look at:
 ```bash
 npm run ingest:demo       # the 28-caption demo dataset through the ingestion pipeline
 npm run ingest:accuracy   # extraction accuracy vs the published hand labels (needs OPENAI_API_KEY)
+npm run catalog:archive -- prd_…   # take a mis-submitted Product back off the catalog (status → draft)
 npm run failure:decline   # rehearsed failure 1: decline, one bounded retry, fail closed
 npm run failure:oversell  # rehearsed failure 2: oversell at fulfilment, automatic refund
 npm run evals:live -- --target <url>   # the live Claude-as-buyer suite (real rails; see docs/live-evals.md)
@@ -286,7 +295,7 @@ harness rather than mocked here — see `PLAN.md` §6 and the Scoreboard above.
 | `RAZORPAY_WEBHOOK_SECRET` | yes | The secret you typed when creating the webhook pointing at `{PUBLIC_BASE_URL}/webhooks/razorpay`. |
 | `PUBLIC_BASE_URL` | yes | This deployment's public HTTPS origin, no trailing slash. Used for the Payment Link callback URL and the audit URLs handed back to agents. |
 | `PORT` | no | Defaults to `3000`. Render and Railway set this themselves. |
-| `OPENAI_API_KEY` | no | Only for ingestion (`npm run ingest:demo`, `npm run ingest:accuracy`) — the server never reads it. The fallback key when `EXTRACTION_API_KEY` is unset and the provider is `openai`. |
+| `OPENAI_API_KEY` | no | The fallback key when `EXTRACTION_API_KEY` is unset and the provider is `openai`. Used by ingestion (`npm run ingest:demo`, `npm run ingest:accuracy`) and, since S1.3, by the server for the merchant face's `submit_catalog_item`. |
 | `EXTRACTION_PROVIDER` | no | `openai` (Responses API) or `openrouter` (OpenAI-compatible Chat Completions). Defaults to `openai`. |
 | `EXTRACTION_API_KEY` | no | The extraction key, whichever provider is selected. Falls back to `OPENAI_API_KEY` / `OPENROUTER_API_KEY`. |
 | `EXTRACTION_MODEL` | no | Ingestion model id; defaults to `gpt-5-mini` (what the committed accuracy run used) **for `openai` only**. `openrouter` has no default and requires this — a guessed model id spends money on the wrong model. |
@@ -299,7 +308,10 @@ harness rather than mocked here — see `PLAN.md` §6 and the Scoreboard above.
 | `OPENROUTER_APP_NAME` | no | Sent to OpenRouter as `X-Title` (attribution only). |
 | `MERCHANT_TOKEN` | no | The Merchant's bearer token for the merchant face. Unset, `npm run seed` mints one (`mrc_tok_…`) and prints it exactly once; set it to keep a token stable across redeploys of a fresh database. An already-minted token is never rotated, so setting this afterwards has no effect. |
 
-The server validates all of these at startup and names every missing one at once.
+The server validates all of these at startup and names every missing one at once. The
+`EXTRACTION_*` group is the exception: extraction is optional at boot (S1.3), so with none of
+it configured the server starts and serves its catalog normally, logs `extraction disabled`,
+and only `submit_catalog_item` refuses — `EXTRACTION_NOT_CONFIGURED`.
 
 ### Razorpay webhook setup
 

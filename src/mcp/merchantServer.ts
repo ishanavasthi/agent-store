@@ -28,7 +28,9 @@ import {
 import { findOrderReceipt } from '../domain/receipts.js';
 import { ValidationError } from '../domain/refusal.js';
 import { readStoreCounts } from '../domain/storeSummary.js';
-import { textResult, withToolErrors } from './toolResults.js';
+import { submitCatalogItem } from '../ingestion/submission.js';
+import { ExtractionError } from '../ingestion/types.js';
+import { errorResult, textResult, withToolErrors } from './toolResults.js';
 
 /**
  * The merchant face (S1.2) — a second, separate MCP endpoint (`/merchant/mcp`)
@@ -174,11 +176,14 @@ export function createMerchantMcpServer(deps: StorefrontDeps): McpServer {
         `never guess them, and send only what changed: a Variant you do not mention keeps ` +
         `its stored values, and nothing is ever deleted from here. (4) list_my_products ` +
         `shows what is currently published and buyable. A published Product is live ` +
-        `immediately for buyer agents. The merchant also reads their store from here: ` +
-        `store_summary answers "how is the shop doing" in one call (catalog and order ` +
-        `counts, revenue in paise today and in total, low stock, sold out, and the ` +
-        `demand that was refused), list_recent_orders lists the latest Orders, and ` +
-        `get_order replays one Order's whole audit chain.`,
+        `immediately for buyer agents. (5) submit_catalog_item adds a NEW Product from the ` +
+        `merchant's own post: send the caption VERBATIM (never your description of the ` +
+        `photo) and optionally a public photo link — the server reads it, and every call ` +
+        `creates another Product, so never call it to correct one. The merchant also ` +
+        `reads their store from here: store_summary answers "how is the shop doing" in ` +
+        `one call (catalog and order counts, revenue in paise today and in total, low ` +
+        `stock, sold out, and the demand that was refused), list_recent_orders lists the ` +
+        `latest Orders, and get_order replays one Order's whole audit chain.`,
     },
   );
 
@@ -508,6 +513,105 @@ export function createMerchantMcpServer(deps: StorefrontDeps): McpServer {
         events: events.map(toWireEvent),
       });
     }),
+  );
+
+  // --- S1.3: the front door ------------------------------------------------
+  // Registered last deliberately: this file is edited by more than one ticket,
+  // and appending keeps the diffs disjoint.
+  server.registerTool(
+    'submit_catalog_item',
+    {
+      title: 'Submit catalog item',
+      description:
+        'Add a new Product to this store from the merchant\'s own post. Pass `caption` as ' +
+        'the merchant\'s caption text VERBATIM — copied character for character, Hinglish, ' +
+        'emoji, line breaks and price formatting intact. If the merchant shared a ' +
+        'screenshot, pass the visible caption text you can read in it, still verbatim. ' +
+        'NEVER pass a description of the photo, a summary, a translation, or fields you ' +
+        'extracted yourself: the server does the extraction, and a paraphrase silently ' +
+        'changes what it reads. If the merchant has a public link to the photo, pass it as ' +
+        '`imageUrl` (http(s), an image, under 4 MiB); alternatively pass the bytes as ' +
+        '`imageBase64` with `imageMediaType`, but never both. The server extracts name, ' +
+        'description, price and stock from the caption and publishes the Product only if ' +
+        'every one of them is confidently stated; anything the caption did not state is ' +
+        'HELD rather than invented, and the result names the holds — ask the merchant for ' +
+        'those values and call confirm_product. EVERY call creates a NEW Product, so call ' +
+        'this once per drop and never to correct one you already submitted.',
+      inputSchema: {
+        merchantToken: MERCHANT_TOKEN_ARG,
+        caption: z
+          .string()
+          .describe(
+            "The merchant's caption, VERBATIM — never your description of the photo.",
+          ),
+        imageUrl: z
+          .string()
+          .optional()
+          .describe('A public http(s) link to the photo. Omit if there is none.'),
+        imageBase64: z
+          .string()
+          .optional()
+          .describe('The photo bytes, base64. Needs imageMediaType. Never together with imageUrl.'),
+        imageMediaType: z.string().optional().describe('e.g. image/jpeg. With imageBase64 only.'),
+        sourceId: z
+          .string()
+          .optional()
+          .describe("The merchant's own label for this drop, e.g. \"sept-raat-tee\". Optional."),
+      },
+    },
+    withToolErrors(
+      async ({ merchantToken, caption, imageUrl, imageBase64, imageMediaType, sourceId }) => {
+        await requireMerchant(deps.db, deps.merchantId, merchantToken, 'submit_catalog_item');
+        if (deps.extractionModel === undefined) {
+          return errorResult(
+            'EXTRACTION_NOT_CONFIGURED',
+            'This deployment has no extraction model configured, so captions cannot be read. ' +
+              'The operator sets the extraction key and redeploys; nothing the merchant can do ' +
+              'from chat fixes it. Products already in the catalog are unaffected.',
+          );
+        }
+
+        let submitted;
+        try {
+          submitted = await submitCatalogItem(
+            deps.db,
+            deps.merchantId,
+            deps.extractionModel,
+            { caption, imageUrl, imageBase64, imageMediaType, sourceId },
+            deps.fetchImpl === undefined ? {} : { fetchImpl: deps.fetchImpl },
+          );
+        } catch (error) {
+          // The model failing is neither policy nor malformed input: it is the
+          // server unable to do a thing it was willing to do, so it gets the
+          // third wire shape rather than being dressed up as a Refusal.
+          if (error instanceof ExtractionError) {
+            const { retryAfterSeconds } = error;
+            return errorResult(
+              'EXTRACTION_FAILED',
+              error.message +
+                (retryAfterSeconds === undefined
+                  ? ''
+                  : ` Retry in ${String(retryAfterSeconds)} seconds.`),
+            );
+          }
+          throw error;
+        }
+
+        const held = submitted.status === 'needs_confirmation';
+        return textResult({
+          productId: submitted.productId,
+          sourceId: submitted.sourceId,
+          status: submitted.status,
+          title: submitted.title,
+          holds: submitted.holds,
+          nextStep: held
+            ? 'Held: ask the merchant for each field named in holds — do not guess or default ' +
+              'any of them — then call confirm_product with productId ' +
+              `${submitted.productId}.`
+            : 'Published — buyer agents can see and buy this Product now.',
+        });
+      },
+    ),
   );
 
   return server;

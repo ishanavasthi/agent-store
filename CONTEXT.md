@@ -65,6 +65,14 @@ _Avoid_: structured output setting, response format, strict mode
 A *published* Variant whose stock is at or below `LOW_STOCK_THRESHOLD` (2) and above zero — the merchant-facing "restock this soon". Deliberately disjoint from **sold out** (a published Variant at exactly zero stock, unbuyable right now): the two are different instructions to the merchant, and `store_summary` reports them as two lists.
 _Avoid_: out of stock (that is the buyer-side refusal case), running low, backorder
 
+**Catalog submission**:
+One caption (and at most one photo) a Merchant hands the store from chat, which the server runs through the same Ingestion pipeline the dataset path runs. The caption is the merchant's own text **verbatim**; a client-written description of the photo is not a submission and the connector is told so. A submission is never idempotent — each one creates a new Product, because a Merchant who posts the same drop twice meant it.
+_Avoid_: upload, import, listing request
+
+**Archived**:
+A Product put back to `draft` after publication, so buyers no longer see it while the row, its extraction record and any Order referencing it stay intact. The repair for a mis-submitted Product (`npm run catalog:archive`), and deliberately not something a chat tool can do.
+_Avoid_: delete, remove, unpublish
+
 ### Purchase flow
 
 **Intent mandate**:

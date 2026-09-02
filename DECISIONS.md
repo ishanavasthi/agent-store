@@ -339,3 +339,27 @@ Why: the plan fixes *what* the three read tools report but not the four edges ea
 Rejected: netting refunds out of revenue (makes the number un-reconcilable against the gateway); a `revenue.refundedPaise` third field (a fourth read tool's worth of reporting, and D17 says three); an IST-fixed day boundary (hardcodes one merchant's timezone into a domain aggregate); publishing the `receipts` row id as `receiptId` (a second identifier for a document that already has one); folding sold-out Variants into `lowStock` (collapses two different merchant actions); three separate count queries (the summary is one chat turn and must not scale with the ledger); computing the counts in JavaScript from `listPublishedVariants` + a full order read (would pull the whole ledger over the wire to count it).
 Revisit when: a Merchant row gains a timezone (then "today" becomes merchant-local), or refunds become common enough that a merchant asks where the money went.
 Tier: Plausible (worker decision under S1.5; plan §4 did not force these shapes — flagged for veto)
+
+## 2026-09-03: A catalog submission is never idempotent — each `submit_catalog_item` call creates a new Product (S1.3)
+Why: the dataset path is deterministic *because* `ingest:demo` is re-run and must not clobber a merchant's confirmations; a merchant in chat has the opposite intent — sending the same drop twice means two drops, and silently merging them would make a real second listing vanish with no error the merchant could see. Keeping the two policies as one parameter (`IngestIds`) rather than two ingestion paths means the confidence gate, the hold rules and the persistence stay a single implementation.
+Rejected: idempotency keyed on the client's `sourceId` (needs a merchant-visible way to say "no, really, again", and the client picks that id — plan §10 keeps it as a follow-up); hashing the caption (two genuinely identical restocks are not an error).
+Revisit when: a merchant duplicates a listing by accident during a real run.
+Tier: Plan-forced (plan §4 S1.3) — the *reason* recorded here, not the choice.
+
+## 2026-09-03: `fetchImage` guards the URL host and the post-redirect host, but does not resolve DNS (for veto)
+Why: `submit_catalog_item` is the only place the server fetches a caller-chosen URL, so it is the whole SSRF surface. Literal loopback/private/link-local addresses and a redirect that lands on one are both refused. Resolving the hostname first and pinning the connection to the resolved address is the complete fix, and it costs a DNS round trip on every submission plus a custom agent/dispatcher — for a one-merchant, one-token deployment whose only sink is "the bytes go to the extraction model", that was judged out of proportion for v1.
+Rejected: no guard at all (turns the demo into an open proxy for the cloud metadata endpoint); resolve-then-pin (correct, disproportionate for v1); an allow-list of image hosts (breaks Take B's own `/demo/images` and any real merchant CDN).
+Revisit when: more than one merchant holds a token, or the fetched bytes ever reach anything but the extraction model.
+Tier: Agent decision, owner not consulted — flagged for veto.
+
+## 2026-09-03: A merchant-supplied `imageUrl` is not written to the extraction record's `imagePath` (S1.3)
+Why: `imagePath` is a repo-relative file the T13 viewer opens; a remote URL there renders as a broken image rather than as nothing. Submissions therefore record `imagePath: null` until the record gains a field of its own (plan §10).
+Rejected: storing the URL in `imagePath` anyway (breaks the viewer for exactly the products the demo creates).
+Revisit when: plan §10's "imageUrl on the extraction record" follow-up is picked up.
+Tier: Agent decision (mechanical consequence of the viewer's contract).
+
+## 2026-09-03: Removal is a maintenance script, never a merchant tool (S1.3, plan D3)
+Why: recorded here because the plan decided *that* it is a script; the reason is that every other merchant tool is recoverable by saying the opposite thing in chat, and removal is not. An LLM that misreads "that one's wrong" as "delete it" would empty a buyer-visible catalog with nothing to undo it. `status = 'draft'` rather than DELETE keeps the Product, its extraction record and any Order that references it intact and auditable.
+Rejected: an `archive_product` MCP tool (an LLM-triggered destructive catalog operation); a hard DELETE (breaks audit references).
+Revisit when: never for this release.
+Tier: Plan-forced (plan D3).
