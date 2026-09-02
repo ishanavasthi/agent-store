@@ -25,6 +25,7 @@ Budget, and written to an append-only audit log a separate auditor re-checks.
 | Surface | What it does |
 |---|---|
 | `POST /mcp` | Authless MCP (Streamable HTTP, stateless). Six tools: `get_product`, `register_agent`, `declare_intent`, `create_cart`, `submit_payment`, `get_order_status`. |
+| `POST /merchant/mcp` | The Merchant face (S1.2): a *separate* authless MCP endpoint with its own tool set — `list_held_products`, `get_held_product`, `confirm_product`, `list_my_products` — so a buyer never sees a tool that edits the catalog. Every tool takes `merchantToken` (`MERCHANT_TOKEN`) and refuses `UNKNOWN_MERCHANT_TOKEN` without a valid one. `confirm_product` is additive: it overlays what the merchant said onto the stored draft and calls the same publish gate the web confirmation screen does, and never deletes a Variant. |
 | `GET /.well-known/agent-store.json` | Discovery doc describing both protocol faces: the MCP endpoint and the REST base + endpoints, auth model, money conventions, failure shapes. |
 | `/acp/*` | The ACP-flavored REST twin (T14): `GET /acp/products`, `POST /acp/agents`, `POST /acp/intents`, `POST /acp/carts`, `POST /acp/payments`, `GET /acp/orders/:orderId` — the same core and trust layer as MCP, `Authorization: Bearer <agentToken>`. Refusals and Receipts are identical in shape on both faces. |
 | `POST /webhooks/razorpay` | Verifies the Razorpay webhook signature, then flips the domain Order to `paid` — or writes an anomaly and leaves it alone. |
@@ -358,6 +359,26 @@ link for you to approve. Approve it with `success@razorpay`, then ask Claude to 
 `get_order_status`, and open `{PUBLIC_BASE_URL}/viewer` to watch the whole chain replay:
 each mandate, each verification, the Receipt. Ask it to buy something over its own declared
 Cap instead and the Refusal gets its own timeline.
+
+### Merchant connector (working the confirmation queue from chat)
+
+The merchant connects a **second** custom connector, to the merchant face:
+
+```
+https://agent-store-production-8345.up.railway.app/merchant/mcp
+```
+
+Also no authentication. Identity is the store's `MERCHANT_TOKEN`, presented as the
+`merchantToken` argument on every call — the same in-protocol habit as the buyer's
+`agentToken`, never a transport header. Read it off the deployment's environment; without
+a valid one every tool refuses `UNKNOWN_MERCHANT_TOKEN` (recoverable — present the right
+one and retry).
+
+Then ask Claude what is waiting on you. It calls `list_held_products` to see the Products
+ingestion held because the caption never stated a field, asks you for the missing numbers,
+and calls `confirm_product` to publish. That call is additive: send only what changed, and
+a Variant you do not mention keeps its stored values — nothing is ever deleted from chat.
+`list_my_products` shows what is currently live and buyable.
 
 ### Claude Code (testing and fallback)
 
