@@ -55,7 +55,7 @@ One new seam: `submitCatalogItem()` in `src/ingestion/submission.ts`. Everything
 
 ### S1.1 Merchant token — schema, migration, seed, gate
 Blocked by: none.
-Landed: PR #PRNUM, 2026-09-03
+Landed: PR #47, 2026-09-03
 - [x] `src/db/schema.ts`: `merchants.token text` nullable + `uniqueIndex('merchants_token_idx')`; `npx drizzle-kit generate --name merchant_token` → `drizzle/0009_merchant_token.sql` + journal + snapshot.
 - [x] `src/domain/merchants.ts`: `newMerchantToken()` (`mrc_tok_` + 32 random bytes base64url, as `newAgentToken`), `ensureMerchantToken(db, merchantId, preferred?)` (env wins; else race-safe `UPDATE … WHERE token IS NULL`, as `ensureMerchantSigningKey`), `requireMerchant(db, merchantId, merchantToken, tool)` → `MerchantRow` | `Refusal(UNKNOWN_MERCHANT_TOKEN)`.
 - [x] `src/domain/refusal.ts`: `UNKNOWN_MERCHANT_TOKEN` in `RefusalCode` (TS only).
