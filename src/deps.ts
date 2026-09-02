@@ -1,5 +1,6 @@
 import type { Database } from './db/client.js';
 import type { PaymentGateway } from './gateway/types.js';
+import type { ExtractionModel } from './ingestion/types.js';
 
 /**
  * Everything the storefront core needs, assembled once at the composition root
@@ -22,4 +23,15 @@ export interface StorefrontDeps {
    * rest of the app keeps working.
    */
   readonly viewerDistDir?: string;
+  /**
+   * The extraction model `submit_catalog_item` runs (S1.3). Optional because a
+   * deployment with no LLM key must still boot and serve its catalog: absent,
+   * that one tool answers `EXTRACTION_NOT_CONFIGURED` and nothing else changes.
+   */
+  readonly extractionModel?: ExtractionModel;
+  /**
+   * How a merchant-submitted photo URL is fetched. Defaults to global `fetch`;
+   * tests inject one so the address guard can be exercised without a network.
+   */
+  readonly fetchImpl?: typeof fetch;
 }

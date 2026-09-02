@@ -18,11 +18,13 @@ import {
   variantIdForSource,
   type IngestItem,
 } from '../ingestion/ingest.js';
-import type {
-  ExtractionInput,
-  ExtractionModel,
-  ExtractionResult,
-  ProductExtraction,
+import { archiveProduct } from '../ingestion/archiveProduct.js';
+import {
+  ExtractionError,
+  type ExtractionInput,
+  type ExtractionModel,
+  type ExtractionResult,
+  type ProductExtraction,
 } from '../ingestion/types.js';
 import { auditChain, call } from '../testSupport/mcpTestClient.js';
 import { createTestDatabase, type TestDatabaseHandle } from '../testSupport/pgliteDatabase.js';
@@ -436,6 +438,36 @@ describe('S1.5 the merchant read tools', () => {
       item(HELD),
     ]);
 
+ * S1.3 (issue #41): the tracer bullet — a Merchant adds a product from chat and
+ * a buyer can buy it, without a browser anywhere in the story.
+ *
+ * Appended as its own block rather than folded into the S1.2 suite above: it
+ * needs a different `deps` (one carrying an extraction model), and this file is
+ * edited by more than one ticket in flight.
+ */
+describe('S1.3 submit_catalog_item', () => {
+  // Stock deliberately unstated — the 0.90 gate firing on camera IS the demo
+  // beat (plan §4), so the tracer exercises exactly that path.
+  const SUBMITTED_CAPTION =
+    'NEW DROP 🔥 Sarhad Panelled Jacket — heavyweight cotton, ₹2,499/- only. DM to order.';
+
+  const submittedExtraction: ProductExtraction = {
+    name: { value: 'Sarhad Panelled Jacket', confidence: 0.96 },
+    description: { value: 'Heavyweight cotton panelled jacket.', confidence: 0.94 },
+    price: { value: paise(249900), confidence: 0.97 },
+    priceText: { value: '₹2,499/-', confidence: 0.97 },
+    stock: { value: null, confidence: 0 },
+    variantLabels: { value: [], confidence: 0.95 },
+    variantStock: { value: {}, confidence: 0.95 },
+  };
+
+  let handle: TestDatabaseHandle;
+  let merchant: Client;
+  let buyer: Client;
+  let merchantToken: string;
+  let seen: ExtractionInput[];
+
+  async function connect(deps: StorefrontDeps): Promise<void> {
     merchant = new Client({ name: 'test-merchant', version: '0.0.0' });
     const merchantPair = InMemoryTransport.createLinkedPair();
     await Promise.all([
@@ -501,6 +533,25 @@ describe('S1.5 the merchant read tools', () => {
     });
     expect(refused.isError).toBe(true);
     expect((refused.body['refusal'] as Record<string, unknown>)['code']).toBe('OVER_CAP');
+    buyer = new Client({ name: 'test-buyer', version: '0.0.0' });
+    const buyerPair = InMemoryTransport.createLinkedPair();
+    await Promise.all([createMcpServer(deps).connect(buyerPair[1]), buyer.connect(buyerPair[0])]);
+  }
+
+  function baseDeps(): StorefrontDeps {
+    return {
+      db: handle.db,
+      gateway: new StubGateway(),
+      merchantId: MERCHANT_ID,
+      publicBaseUrl: 'https://merchant.example',
+    };
+  }
+
+  beforeEach(async () => {
+    handle = await createTestDatabase();
+    await handle.db.insert(merchants).values({ id: MERCHANT_ID, name: 'Kalaakar Streetwear' });
+    merchantToken = (await ensureMerchantToken(handle.db, MERCHANT_ID)).token;
+    seen = [];
   });
 
   afterEach(async () => {
@@ -673,5 +724,209 @@ describe('S1.5 the merchant read tools', () => {
     // A validation error, NOT a Refusal — exactly as PRODUCT_NOT_FOUND is.
     expect(missing.body['refusal']).toBeUndefined();
     expect(missing.body['validationError']).toMatchObject({ code: 'ORDER_NOT_FOUND' });
+  const submittingModel = (): ExtractionModel => ({
+    modelId: 'canned-extractor',
+    extract: (input: ExtractionInput): Promise<ExtractionResult> => {
+      seen.push(input);
+      return Promise.resolve({
+        extraction: submittedExtraction,
+        modelId: 'canned-extractor-2026-09-03',
+        rawResponse: '{}',
+      });
+    },
+  });
+
+  it('carries a chat submission all the way to a buyable Variant on the buyer face', async () => {
+    await connect({ ...baseDeps(), extractionModel: submittingModel() });
+
+    // 1. The merchant sends the caption verbatim; extraction runs server-side.
+    const submitted = await call(merchant, 'submit_catalog_item', {
+      merchantToken,
+      caption: SUBMITTED_CAPTION,
+    });
+    expect(submitted.isError).toBe(false);
+    expect(seen[0]!.caption).toBe(SUBMITTED_CAPTION);
+
+    const productId = submitted.body['productId'] as string;
+    expect(productId).toMatch(/^prd_[0-9a-f]{32}$/);
+    expect(productId).not.toContain('prd_demo_');
+    expect(submitted.body['sourceId'] as string).toMatch(/^sub_/);
+    expect(submitted.body['title']).toBe('Sarhad Panelled Jacket');
+    // 2. The caption stated no stock, so the gate holds the whole Product.
+    expect(submitted.body['status']).toBe('needs_confirmation');
+    expect(submitted.body['holds']).toEqual([
+      { field: 'stock', reason: 'the caption never states a stock count' },
+    ]);
+    expect(submitted.body['nextStep']).toContain('confirm_product');
+
+    // 3. It is on the confirmation queue, with honest nulls.
+    const held = await call(merchant, 'list_held_products', { merchantToken });
+    const queued = (held.body['products'] as Array<Record<string, any>>).find(
+      (p) => p.productId === productId,
+    );
+    expect(queued).toBeDefined();
+    expect(queued!.variants[0].stock).toBeNull();
+    expect(queued!.variants[0].pricePaise).toBe(249900);
+    const variantId = queued!.variants[0].variantId as string;
+    expect(variantId).toMatch(/^var_[0-9a-f]{32}$/);
+
+    // 4. The buyer cannot see it yet — a held Product is invisible in whole.
+    const before = await call(buyer, 'get_product', {});
+    expect((before.body['variants'] as Array<Record<string, any>>)).toEqual([]);
+
+    // 5. The merchant answers the one held field in chat.
+    const confirmed = await call(merchant, 'confirm_product', {
+      merchantToken,
+      productId,
+      variants: [{ variantId, stock: 9 }],
+    });
+    expect(confirmed.isError).toBe(false);
+    expect(confirmed.body['status']).toBe('published');
+
+    // 6. And the buyer face lists the new Variant with the confirmed stock.
+    const after = await call(buyer, 'get_product', {});
+    const listed = (after.body['variants'] as Array<Record<string, any>>).find(
+      (v) => v.variantId === variantId,
+    );
+    expect(listed).toMatchObject({ stock: 9, price: { amountPaise: 249900 } });
+  });
+
+  it('refuses EXTRACTION_NOT_CONFIGURED when the deployment has no model', async () => {
+    // The storefront boots without an LLM key; exactly one tool notices.
+    await connect(baseDeps());
+
+    const result = await call(merchant, 'submit_catalog_item', {
+      merchantToken,
+      caption: SUBMITTED_CAPTION,
+    });
+    expect(result.isError).toBe(true);
+    expect(result.body['error']).toMatchObject({ code: 'EXTRACTION_NOT_CONFIGURED' });
+    // Neither a Refusal nor a validation error — a distinct third shape.
+    expect(result.body['refusal']).toBeUndefined();
+    expect(result.body['validationError']).toBeUndefined();
+
+    // The rest of the face still works.
+    const live = await call(merchant, 'list_my_products', { merchantToken });
+    expect(live.isError).toBe(false);
+  });
+
+  it('surfaces a refused photo link as INVALID_IMAGE and writes nothing', async () => {
+    const refusesEverything: typeof fetch = () => {
+      throw new Error('fetch must not be reached for a blocked address');
+    };
+    await connect({
+      ...baseDeps(),
+      extractionModel: submittingModel(),
+      fetchImpl: refusesEverything,
+    });
+
+    const result = await call(merchant, 'submit_catalog_item', {
+      merchantToken,
+      caption: SUBMITTED_CAPTION,
+      imageUrl: 'http://169.254.169.254/latest/meta-data/',
+    });
+    expect(result.isError).toBe(true);
+    expect(result.body['validationError']).toMatchObject({ code: 'INVALID_IMAGE' });
+    // The model was never called, and nothing landed on the queue.
+    expect(seen).toEqual([]);
+    const held = await call(merchant, 'list_held_products', { merchantToken });
+    expect(held.body['products']).toEqual([]);
+  });
+
+  it('rejects INVALID_SUBMISSION for a blank caption or both image forms at once', async () => {
+    await connect({ ...baseDeps(), extractionModel: submittingModel() });
+
+    const blank = await call(merchant, 'submit_catalog_item', { merchantToken, caption: '   ' });
+    expect(blank.body['validationError']).toMatchObject({ code: 'INVALID_SUBMISSION' });
+
+    const both = await call(merchant, 'submit_catalog_item', {
+      merchantToken,
+      caption: SUBMITTED_CAPTION,
+      imageUrl: 'https://cdn.example.com/a.jpg',
+      imageBase64: 'AAAA',
+      imageMediaType: 'image/jpeg',
+    });
+    expect(both.body['validationError']).toMatchObject({ code: 'INVALID_SUBMISSION' });
+  });
+
+  it('refuses the submit tool without a valid merchantToken, before any extraction', async () => {
+    await connect({ ...baseDeps(), extractionModel: submittingModel() });
+
+    const result = await call(merchant, 'submit_catalog_item', { caption: SUBMITTED_CAPTION });
+    expect(result.isError).toBe(true);
+    expect(result.body['refusal']).toMatchObject({ code: 'UNKNOWN_MERCHANT_TOKEN' });
+    expect(seen).toEqual([]);
+    expect(await auditChain(handle.db)).toEqual([]);
+  });
+
+  it('reports EXTRACTION_FAILED, with the retry hint when the provider gave one', async () => {
+    const failing: ExtractionModel = {
+      modelId: 'canned-extractor',
+      extract: () =>
+        Promise.reject(
+          Object.assign(new ExtractionError('openrouter said 429: rate limited'), {
+            retryAfterSeconds: 12,
+          }),
+        ),
+    };
+    await connect({ ...baseDeps(), extractionModel: failing });
+
+    const result = await call(merchant, 'submit_catalog_item', {
+      merchantToken,
+      caption: SUBMITTED_CAPTION,
+    });
+    expect(result.isError).toBe(true);
+    expect(result.body['error']).toMatchObject({ code: 'EXTRACTION_FAILED' });
+    const message = (result.body['error'] as Record<string, string>)['message'] ?? '';
+    expect(message).toContain('rate limited');
+    expect(message).toContain('12 seconds');
+  });
+
+  it('creates a second Product from the same caption — submissions are never merged', async () => {
+    await connect({ ...baseDeps(), extractionModel: submittingModel() });
+
+    const first = await call(merchant, 'submit_catalog_item', {
+      merchantToken,
+      caption: SUBMITTED_CAPTION,
+    });
+    const second = await call(merchant, 'submit_catalog_item', {
+      merchantToken,
+      caption: SUBMITTED_CAPTION,
+    });
+    expect(second.body['productId']).not.toBe(first.body['productId']);
+    const held = await call(merchant, 'list_held_products', { merchantToken });
+    expect(held.body['products']).toHaveLength(2);
+  });
+
+  it('archive takes a mis-submitted Product back off the buyer face (plan D3)', async () => {
+    await connect({ ...baseDeps(), extractionModel: submittingModel() });
+
+    const submitted = await call(merchant, 'submit_catalog_item', {
+      merchantToken,
+      caption: SUBMITTED_CAPTION,
+    });
+    const productId = submitted.body['productId'] as string;
+    const held = await call(merchant, 'list_held_products', { merchantToken });
+    const variantId = (held.body['products'] as Array<Record<string, any>>)[0]!.variants[0]
+      .variantId as string;
+    await call(merchant, 'confirm_product', {
+      merchantToken,
+      productId,
+      variants: [{ variantId, stock: 9 }],
+    });
+    const live = await call(buyer, 'get_product', {});
+    expect((live.body['variants'] as Array<Record<string, any>>).map((v) => v.variantId)).toContain(
+      variantId,
+    );
+
+    expect(await archiveProduct(handle.db, MERCHANT_ID, productId)).toBe(true);
+
+    const gone = await call(buyer, 'get_product', {});
+    expect(
+      (gone.body['variants'] as Array<Record<string, any>>).map((v) => v.variantId),
+    ).not.toContain(variantId);
+    // …and it does not reappear on the confirmation queue either.
+    const queue = await call(merchant, 'list_held_products', { merchantToken });
+    expect(queue.body['products']).toEqual([]);
   });
 });

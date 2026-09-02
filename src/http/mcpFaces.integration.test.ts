@@ -38,6 +38,7 @@ const MERCHANT_TOOLS = [
   'list_my_products',
   'list_recent_orders',
   'store_summary',
+  'submit_catalog_item',
 ];
 
 describe('S1.2 the two MCP faces over real HTTP', () => {

@@ -27,7 +27,32 @@ export interface IngestOptions {
   /** Auto-publish threshold override; defaults to `AUTO_PUBLISH_THRESHOLD`. */
   readonly threshold?: number;
   readonly now?: () => Date;
+  /** How the row ids are minted; defaults to `DEMO_INGEST_IDS`. */
+  readonly ids?: IngestIds;
 }
+
+/**
+ * How this ingestion run names its rows (S1.3).
+ *
+ * The dataset path needs ids that are a *function of the dataset item*, so a
+ * re-run of `ingest:demo` collides with what it wrote last time and skips
+ * rather than duplicating (see the module comment). A Merchant submitting from
+ * chat needs the opposite: two submissions of the same caption are two real
+ * Products, because a merchant who sends the same drop twice meant it — there
+ * is no dataset to re-run and nothing to be idempotent about. Those are
+ * different policies, not different code paths, so the id function is the
+ * parameter and everything else is shared.
+ */
+export interface IngestIds {
+  productId(sourceId: string): string;
+  variantId(sourceId: string, label: string | null): string;
+}
+
+/** The dataset path's deterministic ids — `prd_demo_…` / `var_demo_…`. */
+export const DEMO_INGEST_IDS: IngestIds = {
+  productId: productIdForSource,
+  variantId: variantIdForSource,
+};
 
 export interface IngestedProduct {
   readonly productId: string;
@@ -68,7 +93,7 @@ export async function ingestItem(
       ...(options.threshold === undefined ? {} : { threshold: options.threshold }),
     },
   );
-  return persistAssembledProduct(db, merchantId, assembled);
+  return persistAssembledProduct(db, merchantId, assembled, options.ids ?? DEMO_INGEST_IDS);
 }
 
 export async function ingestItems(
@@ -98,8 +123,9 @@ export async function persistAssembledProduct(
   db: Database,
   merchantId: string,
   assembled: AssembledProduct,
+  ids: IngestIds = DEMO_INGEST_IDS,
 ): Promise<IngestedProduct> {
-  const productId = productIdForSource(assembled.sourceId);
+  const productId = ids.productId(assembled.sourceId);
 
   const created = await db.transaction(async (tx) => {
     const inserted = await tx
@@ -118,7 +144,7 @@ export async function persistAssembledProduct(
 
     await tx.insert(variants).values(
       assembled.variants.map((variant) => ({
-        id: variantIdForSource(assembled.sourceId, variant.label),
+        id: ids.variantId(assembled.sourceId, variant.label),
         productId,
         label: variant.label,
         isDefault: variant.isDefault,

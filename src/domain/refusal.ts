@@ -131,7 +131,25 @@ export type ValidationErrorCode =
    * The server refuses these regardless of what the UI allowed (issue #14:
    * nothing unconfirmed — and nothing invented — is ever published).
    */
-  | 'INVALID_CONFIRMATION';
+  | 'INVALID_CONFIRMATION'
+  // S1.3 — the merchant submits a Product from chat. Both are merchant-side
+  // input problems, like the T13 pair above, so they are validation errors and
+  // never Refusals.
+  /**
+   * The submitted photo could not be fetched as an image: a non-http(s) scheme,
+   * an address the server refuses to reach (loopback, private, link-local — plan
+   * D4), a response that is not `image/*`, one larger than the 4 MiB cap, or a
+   * fetch that failed or timed out. Deliberately ONE code: the merchant's next
+   * move is the same in every case — send a different, public photo link — and a
+   * finer taxonomy would only tell an attacker which addresses exist.
+   */
+  | 'INVALID_IMAGE'
+  /**
+   * The submission itself is malformed before any fetch: a blank caption, or
+   * both image forms (`imageUrl` and `imageBase64`) supplied at once, which
+   * leaves the server guessing which photo the merchant meant.
+   */
+  | 'INVALID_SUBMISSION';
 
 /**
  * A malformed or unsatisfiable request. Deliberately a *different shape* from

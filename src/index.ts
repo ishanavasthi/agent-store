@@ -2,6 +2,7 @@ import { MERCHANT_ID, loadConfig } from './config.js';
 import { createDatabase } from './db/client.js';
 import { RazorpayGateway } from './gateway/razorpayGateway.js';
 import { createApp } from './http/app.js';
+import { createExtractionModelIfConfigured } from './ingestion/extractionModel.js';
 
 /**
  * Composition root — the only place the real gateway implementation is chosen.
@@ -18,12 +19,27 @@ async function main(): Promise<void> {
     webhookSecret: config.razorpay.webhookSecret,
   });
 
-  const app = createApp({ db, gateway, merchantId: MERCHANT_ID, publicBaseUrl: config.publicBaseUrl });
+  // Extraction is optional at boot (S1.3): no key means `submit_catalog_item`
+  // answers EXTRACTION_NOT_CONFIGURED, not that the storefront refuses to start.
+  const extractionModel = createExtractionModelIfConfigured();
+
+  const app = createApp({
+    db,
+    gateway,
+    merchantId: MERCHANT_ID,
+    publicBaseUrl: config.publicBaseUrl,
+    ...(extractionModel === null ? {} : { extractionModel }),
+  });
 
   const server = app.listen(config.port, () => {
     console.log(`[agent-store] listening on :${config.port}`);
     console.log(`[agent-store] MCP endpoint    ${config.publicBaseUrl}/mcp`);
     console.log(`[agent-store] webhook target  ${config.publicBaseUrl}/webhooks/razorpay`);
+    console.log(
+      extractionModel === null
+        ? '[agent-store] extraction     disabled (no key) — submit_catalog_item will refuse'
+        : `[agent-store] extraction     ${extractionModel.modelId}`,
+    );
   });
 
   const shutdown = (signal: string): void => {

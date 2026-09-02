@@ -5,7 +5,7 @@ import {
   readExtractionProviderConfig,
 } from './extraction/config.js';
 import { OpenAIExtractionModel } from './extraction/openaiResponsesModel.js';
-import type { ExtractionModel } from './types.js';
+import { ExtractionError, type ExtractionModel } from './types.js';
 
 /**
  * Which model does extraction — spec story 42's swap, and it is *configuration*.
@@ -30,6 +30,32 @@ export const DEFAULT_EXTRACTION_MODEL = DEFAULT_OPENAI_MODEL;
 export function extractionModelId(): string {
   const configured = process.env['EXTRACTION_MODEL']?.trim() ?? '';
   return configured === '' ? DEFAULT_EXTRACTION_MODEL : configured;
+}
+
+/**
+ * The model, or `null` when this deployment has not configured extraction (S1.3).
+ *
+ * The storefront must boot without an LLM key — it serves a catalog that
+ * ingestion already produced, and refusing to start over a knob it never uses
+ * would take the demo down for a reason that has nothing to do with the demo.
+ * So `src/index.ts` calls this, logs which way it went, and
+ * `submit_catalog_item` is the only surface that notices, answering
+ * `EXTRACTION_NOT_CONFIGURED` rather than throwing at boot.
+ *
+ * "Configured" is whatever `readExtractionProviderConfig` says it is, asked by
+ * running it — a missing key, and equally an OpenRouter provider with no
+ * `EXTRACTION_MODEL`, are both "not configured". Reading the variables again
+ * here would be a second, drifting answer to a question S2.2's config layer
+ * already owns. Only that configuration error is swallowed; anything else the
+ * adapters throw is a real fault and still reaches the composition root.
+ */
+export function createExtractionModelIfConfigured(): ExtractionModel | null {
+  try {
+    return createExtractionModel();
+  } catch (error) {
+    if (error instanceof ExtractionError) return null;
+    throw error;
+  }
 }
 
 export function createExtractionModel(): ExtractionModel {

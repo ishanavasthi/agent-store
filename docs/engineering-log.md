@@ -43,6 +43,72 @@ dialect package before assuming a version mismatch. Anything that *builds a
 statement* (set operators, table/column constructors) lives in `pg-core`;
 anything that builds a *fragment inside* one lives at the root.
 
+---
+
+## 2026-09-03 — S1.3 submit_catalog_item
+
+### Two Orca worktrees running `npm test` at once fail 87 tests that have nothing wrong with them
+
+**Symptom** — a full `npm test` came back `16 failed | 27 passed (43)`,
+`87 failed | 280 passed (367)`, with every failure identical:
+`Error: Hook timed out in 10000ms` pointing at the `beforeEach` that calls
+`createTestDatabase()`. Re-running the same commit alone: one real failure and
+366 passes.
+
+**Cause** — every integration test boots its own embedded PGlite, which is a
+WASM Postgres that wants real CPU for a second or two. Two worktree workers
+(S1.3 and S1.5) ran their suites concurrently on one laptop, so PGlite startup
+crossed vitest's 10 s `hookTimeout` in whichever run lost the race. Nothing in
+either diff was involved; the duration line is the tell — 430 s for the
+contended run against 38 s for the clean one.
+
+**Fix** — wait for the other worktree's suite to finish and re-run. Do not
+raise `hookTimeout` to paper over it: the timeout is doing its job.
+
+**Lesson** — in a parallel-worktree run, a wall of identical
+`Hook timed out … createTestDatabase` failures is a machine-load report, not a
+regression. Check `pgrep -f vitest` before believing it, and never report a red
+suite from a contended run without re-running it alone.
+
+### `BodyInit` is not a global type in this tsconfig, so `new Response(bytes)` typechecks but the obvious cast does not
+
+**Symptom** — a test helper written as
+`new Response(bytes as unknown as BodyInit, …)` failed `npm run typecheck` with
+`TS2304: Cannot find name 'BodyInit'`, in a project where `Response` itself
+resolves fine and the tests run.
+
+**Cause** — the runtime globals come from `@types/node`'s undici typings, which
+export the `Response` *class* globally but do not publish `BodyInit` as a global
+type name (it is a DOM lib type). `lib` here does not include `DOM`, so the
+class is in scope and the alias for its argument is not.
+
+**Fix** — drop the cast. `new Response(uint8Array)` and `new Response(string)`
+both typecheck on their own; the cast was defending against a problem that did
+not exist.
+
+**Lesson** — in a Node-lib project, reach for the *value* (`Response`) and let
+inference do the rest; the DOM's helper type aliases are not there to be named.
+
+### A `new Response()` reports `url` as the empty string, so a redirect guard has to tolerate that
+
+**Symptom** — `fetchImage` re-checks `response.url` after the fetch so a
+redirect into private address space is refused too. Under an injected
+`fetchImpl` that returns a hand-built `Response`, that check ran against `''`
+and threw `INVALID_IMAGE` on the happy path.
+
+**Cause** — `url` is only populated on a `Response` that came from an actual
+fetch; the constructor leaves it `''`. `new URL('')` throws, which the guard
+correctly reports as "not a URL".
+
+**Fix** — the post-redirect check runs only when `response.url` is a non-empty
+string, and the test that needs it defines the property explicitly.
+
+**Lesson** — a security check placed on a response field must state what it does
+when the field is absent. "Absent" and "hostile" are different answers, and
+picking the wrong one either breaks every test or opens the hole.
+
+---
+
 ## 2026-09-03 — S2.1 zod payload + golden request
 
 ### zod reports an unrecognised key at an empty path, so the offending key names itself or nothing does
