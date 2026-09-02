@@ -23,7 +23,8 @@ import { parsePayload, toExtraction } from './toExtraction.js';
  * *accepts* a schema (plan §1).
  */
 
-const RESPONSES_URL = 'https://api.openai.com/v1/responses';
+/** Overridable by `EXTRACTION_BASE_URL`; this default is the pinned golden URL. */
+const DEFAULT_BASE_URL = 'https://api.openai.com/v1';
 
 /**
  * Reasoning effort for the gpt-5 family. `low` keeps a 5-item spike under a
@@ -40,6 +41,8 @@ export interface OpenAIExtractionModelOptions {
   /** e.g. `gpt-5-mini`. Set by `extractionModel.ts`, not by callers. */
   readonly model: string;
   readonly apiKey: string;
+  /** No trailing slash. Defaults to `https://api.openai.com/v1`. */
+  readonly baseUrl?: string;
   /** Defaults to the global `fetch`. Injected by tests, never in production. */
   readonly fetchImpl?: typeof fetch;
 }
@@ -89,7 +92,8 @@ export class OpenAIExtractionModel implements ExtractionModel {
       },
     };
 
-    const response = await this.#fetch(RESPONSES_URL, {
+    const baseUrl = this.#options.baseUrl ?? DEFAULT_BASE_URL;
+    const response = await this.#fetch(`${baseUrl}/responses`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${this.#options.apiKey}`,

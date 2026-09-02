@@ -113,11 +113,12 @@ Landed: PR #48, 2026-09-03
 
 ### S2.2 Provider config, Chat Completions adapter, retries
 Blocked by: S2.1.
-- [ ] `config.ts`: `ExtractionProviderConfig { provider: 'openai'|'openrouter'; apiKey; baseUrl; model; outputMode: 'json_schema'|'tool_call'; vision: boolean; timeoutMs; extraHeaders }` from `EXTRACTION_PROVIDER` (default openai), `EXTRACTION_API_KEY` (falls back to `OPENAI_API_KEY` / `OPENROUTER_API_KEY`), `EXTRACTION_BASE_URL`, `EXTRACTION_MODEL` (default `gpt-5-mini` for openai only; openrouter requires it), `EXTRACTION_OUTPUT_MODE` (default openai `json_schema`, openrouter `tool_call`), `EXTRACTION_VISION` (default true; false + image ⇒ `ExtractionError`, never silent), `EXTRACTION_TIMEOUT_MS` (60000), `OPENROUTER_SITE_URL` → `HTTP-Referer`, `OPENROUTER_APP_NAME` → `X-Title`. Only `OPENAI_API_KEY` set ⇒ byte-identical to today.
-- [ ] `providerHttp.ts`: `postJson` with `AbortSignal.timeout`; D5 retries.
-- [ ] `chatCompletionsModel.ts`: `messages:[system INSTRUCTIONS, user [{type:'text'},{type:'image_url',image_url:{url}}]]`, `max_tokens`, no `reasoning`; `json_schema` → `response_format:{type:'json_schema',json_schema:{name,strict:true,schema}}`, read `choices[0].message.content`; `tool_call` → `tools:[{type:'function',function:{name:'record_extraction',parameters,strict:true}}]` + forced `tool_choice`, read `tool_calls[0].function.arguments`; `message.refusal` / `finish_reason==='length'` → `ExtractionError`. Both adapters end in `parsePayload` → `toExtraction`.
-- [ ] `extractionModel.ts`: switch on provider; `DEFAULT_EXTRACTION_MODEL` stays `'gpt-5-mini'`. `.env.example`, README env table.
-- [ ] Tests: `config.test.ts`; `providerHttp.test.ts` (429→200, 500→200, 400 no retry, three 429s fail after 3 attempts with `retryAfterSeconds`, timeout aborts); `chatCompletionsModel.test.ts` (both request shapes, image part, no `reasoning`, extra headers, content vs tool-arguments parsing, refusal, drifted GLM-style payload → zod `ExtractionError`, vision:false throws before fetch).
+Landed: PR #50, 2026-09-03
+- [x] `config.ts`: `ExtractionProviderConfig { provider: 'openai'|'openrouter'; apiKey; baseUrl; model; outputMode: 'json_schema'|'tool_call'; vision: boolean; timeoutMs; extraHeaders }` from `EXTRACTION_PROVIDER` (default openai), `EXTRACTION_API_KEY` (falls back to `OPENAI_API_KEY` / `OPENROUTER_API_KEY`), `EXTRACTION_BASE_URL`, `EXTRACTION_MODEL` (default `gpt-5-mini` for openai only; openrouter requires it), `EXTRACTION_OUTPUT_MODE` (default openai `json_schema`, openrouter `tool_call`), `EXTRACTION_VISION` (default true; false + image ⇒ `ExtractionError`, never silent), `EXTRACTION_TIMEOUT_MS` (60000), `OPENROUTER_SITE_URL` → `HTTP-Referer`, `OPENROUTER_APP_NAME` → `X-Title`. Only `OPENAI_API_KEY` set ⇒ byte-identical to today.
+- [x] `providerHttp.ts`: `postJson` with `AbortSignal.timeout`; D5 retries.
+- [x] `chatCompletionsModel.ts`: `messages:[system INSTRUCTIONS, user [{type:'text'},{type:'image_url',image_url:{url}}]]`, `max_tokens`, no `reasoning`; `json_schema` → `response_format:{type:'json_schema',json_schema:{name,strict:true,schema}}`, read `choices[0].message.content`; `tool_call` → `tools:[{type:'function',function:{name:'record_extraction',parameters,strict:true}}]` + forced `tool_choice`, read `tool_calls[0].function.arguments`; `message.refusal` / `finish_reason==='length'` → `ExtractionError`. Both adapters end in `parsePayload` → `toExtraction`.
+- [x] `extractionModel.ts`: switch on provider; `DEFAULT_EXTRACTION_MODEL` stays `'gpt-5-mini'`. `.env.example`, README env table.
+- [x] Tests: `config.test.ts`; `providerHttp.test.ts` (429→200, 500→200, 400 no retry, three 429s fail after 3 attempts with `retryAfterSeconds`, timeout aborts); `chatCompletionsModel.test.ts` (both request shapes, image part, no `reasoning`, extra headers, content vs tool-arguments parsing, refusal, drifted GLM-style payload → zod `ExtractionError`, vision:false throws before fetch).
 
 ### S2.3 Live runs, smoke + compare scripts, decision record
 Blocked by: S2.2.
@@ -141,7 +142,7 @@ Blocked by: S2.2.
 
 ## 7. Execution runbook (D15, D19)
 
-Two chains, disjoint files until S1.3 touches `src/ingestion/extractionModel.ts` (adds `createExtractionModelIfConfigured`; S2.2 rewrites that file → **WS2 rebases on `main` after S1.3 merges**). Other known seams: `README.md` env table (S1.4 + S2.2, trivial), `src/domain/refusal.ts` (WS1 only), `package.json` scripts (S1.3 `catalog:archive`, S2.3 `ingest:*`).
+Two chains, disjoint files until S1.3 touches `src/ingestion/extractionModel.ts` (adds `createExtractionModelIfConfigured`; S2.2 rewrites that file → **WS2 rebases on `main` after S1.3 merges**). *Corrected 2026-09-03 (S2.2):* WS2 ran ahead and reached that file first, so S2.2 owns the provider switch and S1.3 adds `createExtractionModelIfConfigured()` on top of it — the rebase direction is the other way round, and `DEFAULT_EXTRACTION_MODEL` plus the module's existing exports were kept working so that addition stays a small additive diff. Other known seams: `README.md` env table (S1.4 + S2.2, trivial), `src/domain/refusal.ts` (WS1 only), `package.json` scripts (S1.3 `catalog:archive`, S2.3 `ingest:*`).
 
 ```
 WS1:  S1.1 ─► S1.2 ─► S1.3 ─► S1.4

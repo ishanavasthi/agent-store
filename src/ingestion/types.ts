@@ -97,9 +97,18 @@ export interface ExtractionResult {
 }
 
 export class ExtractionError extends Error {
-  constructor(message: string, cause?: unknown) {
+  /**
+   * How long the caller should wait before trying again, when the provider
+   * said so (a `Retry-After` on a 429, honoured by `providerHttp`). Undefined
+   * whenever the failure is not a rate limit — so a tool result can say
+   * "retry in N seconds" only when N actually came from the provider.
+   */
+  readonly retryAfterSeconds: number | undefined;
+
+  constructor(message: string, cause?: unknown, options?: { retryAfterSeconds?: number }) {
     super(message, cause === undefined ? undefined : { cause });
     this.name = 'ExtractionError';
+    this.retryAfterSeconds = options?.retryAfterSeconds;
   }
 }
 

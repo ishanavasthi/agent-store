@@ -54,6 +54,14 @@ The Merchant's act of approving or correcting extracted fields whose confidence 
 **Auto-publish threshold**:
 The confidence at/above which an extracted field publishes without Confirmation (`AUTO_PUBLISH_THRESHOLD`, currently 0.90 — tuned on the committed accuracy run, because model self-reported confidence is uncalibrated and never read as probability). Stock is stricter than any threshold: a Variant's stock is either a count the caption *states* or null — never defaulted, never a total split by guesswork — and any null-price or null-stock Variant holds the whole Product out of `published`.
 
+**Extraction provider**:
+The HTTP API extraction is pointed at (`openai` | `openrouter`), together with the key, base URL, model, Output mode, vision flag and timeout that go with it — one record read from `EXTRACTION_*`, never a code path a caller chooses. Swapping providers is configuration; the seam above it (`ExtractionModel`) does not move.
+_Avoid_: LLM backend, vendor, gateway
+
+**Output mode**:
+How a provider is asked to return the extraction payload: `json_schema` (a `response_format` carrying the schema) or `tool_call` (a forced call to a single `record_extraction` function whose parameters *are* the schema). It exists because acceptance is not enforcement — OpenRouter takes a `response_format` it does not apply — so the mode is the best available approximation of strict mode, and our own zod validation, not the mode, is the guarantee.
+_Avoid_: structured output setting, response format, strict mode
+
 ### Purchase flow
 
 **Intent mandate**:
