@@ -1,5 +1,6 @@
 import { existsSync } from 'node:fs';
 import path from 'node:path';
+import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import express, { type Express, type NextFunction, type Request, type Response } from 'express';
 import { MERCHANT_NAME } from '../config.js';
@@ -22,6 +23,7 @@ import {
 } from '../domain/orders.js';
 import { refundOversoldOrder } from '../domain/oversell.js';
 import { RAZORPAY_SIGNATURE_HEADER, WebhookParseError } from '../gateway/razorpayWebhook.js';
+import { createMerchantMcpServer } from '../mcp/merchantServer.js';
 import { createMcpServer } from '../mcp/server.js';
 import { createMerchantRouter } from './merchantConfirmation.js';
 import {
@@ -52,6 +54,49 @@ function escapeHtml(value: string): string {
     .replaceAll('>', '&gt;')
     .replaceAll('"', '&quot;')
     .replaceAll("'", '&#39;');
+}
+
+/** The merchant's own MCP face, mounted ahead of the `/merchant` router. */
+const MERCHANT_MCP_PATH = '/merchant/mcp';
+
+/**
+ * One MCP endpoint, stateless Streamable HTTP: POST speaks the protocol, and
+ * GET/DELETE answer 405 because stateless mode has no server→client stream and
+ * no session to delete. Both faces mount through here so they can never drift
+ * into different transport behaviour.
+ */
+function mountStatelessMcp(app: Express, mountPath: string, createServer: () => McpServer): void {
+  app.post(mountPath, async (req: Request, res: Response) => {
+    const server = createServer();
+    const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
+    res.on('close', () => {
+      void transport.close();
+      void server.close();
+    });
+    try {
+      await server.connect(transport);
+      await transport.handleRequest(req, res, req.body);
+    } catch (error) {
+      if (!res.headersSent) {
+        res.status(500).json({
+          jsonrpc: '2.0',
+          error: { code: -32603, message: 'Internal server error' },
+          id: null,
+        });
+      }
+      throw error;
+    }
+  });
+
+  const noSession = (_req: Request, res: Response): void => {
+    res.status(405).json({
+      jsonrpc: '2.0',
+      error: { code: -32000, message: 'Method not allowed: this MCP server is stateless' },
+      id: null,
+    });
+  };
+  app.get(mountPath, noSession);
+  app.delete(mountPath, noSession);
 }
 
 export function createApp(deps: StorefrontDeps): Express {
@@ -124,39 +169,14 @@ export function createApp(deps: StorefrontDeps): Express {
   // MCP — authless Streamable HTTP, stateless (a fresh server + transport per
   // request). Statelessness is what lets Render's free tier restart or scale
   // this process without dropping a connector mid-purchase.
+  //
+  // Two faces, one mounting helper: the buyer's `/mcp` and the merchant's
+  // `/merchant/mcp` (S1.2). `/merchant/mcp` MUST be registered before the
+  // `/merchant` router below, or that router answers the MCP path first and the
+  // merchant connector sees a 404 from the confirmation API.
   // ---------------------------------------------------------------------------
-  app.post('/mcp', async (req: Request, res: Response) => {
-    const server = createMcpServer(deps);
-    const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
-    res.on('close', () => {
-      void transport.close();
-      void server.close();
-    });
-    try {
-      await server.connect(transport);
-      await transport.handleRequest(req, res, req.body);
-    } catch (error) {
-      if (!res.headersSent) {
-        res.status(500).json({
-          jsonrpc: '2.0',
-          error: { code: -32603, message: 'Internal server error' },
-          id: null,
-        });
-      }
-      throw error;
-    }
-  });
-
-  // Stateless mode has no server→client stream and no session to delete.
-  const noSession = (_req: Request, res: Response): void => {
-    res.status(405).json({
-      jsonrpc: '2.0',
-      error: { code: -32000, message: 'Method not allowed: this MCP server is stateless' },
-      id: null,
-    });
-  };
-  app.get('/mcp', noSession);
-  app.delete('/mcp', noSession);
+  mountStatelessMcp(app, '/mcp', () => createMcpServer(deps));
+  mountStatelessMcp(app, MERCHANT_MCP_PATH, () => createMerchantMcpServer(deps));
 
   // ---------------------------------------------------------------------------
   // REST — the ACP-flavored second face (T14). Same core, same Refusals, same
@@ -298,10 +318,12 @@ export function createApp(deps: StorefrontDeps): Express {
       service: 'agent-store',
       merchant: MERCHANT_NAME,
       mcp: `${deps.publicBaseUrl}/mcp`,
+      merchantMcp: `${deps.publicBaseUrl}${MERCHANT_MCP_PATH}`,
       rest: `${deps.publicBaseUrl}${REST_BASE_PATH}`,
       discovery: `${deps.publicBaseUrl}${DISCOVERY_PATH}`,
       endpoints: [
         '/mcp',
+        MERCHANT_MCP_PATH,
         DISCOVERY_PATH,
         `${REST_BASE_PATH}/products`,
         `${REST_BASE_PATH}/agents`,

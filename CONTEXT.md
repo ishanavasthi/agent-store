@@ -25,8 +25,12 @@ _Avoid_: non-custodial account, wallet, key escrow
 ### Protocol surface
 
 **Face**:
-One protocol door into the single storefront core. v1 has two: the MCP face (`/mcp`, Streamable HTTP tools) and the ACP-flavored REST face (`/acp/*`). Faces are thin adapters — every trust-layer decision is made by the core, so a Refusal, a validation error, or a Receipt is identical in shape on both.
+One protocol door into the single storefront core. v1 has three: the buyer MCP face (`/mcp`, Streamable HTTP tools), the ACP-flavored REST face (`/acp/*`) — the buyer's two — and the Merchant face. Faces are thin adapters — every trust-layer decision is made by the core, so a Refusal, a validation error, or a Receipt is identical in shape on both.
 _Avoid_: API version, frontend, channel
+
+**Merchant face**:
+The Merchant's own MCP door, `/merchant/mcp` (S1.2) — a *separate* endpoint with its own tool set, its own instructions, and no tool a buyer may see. Same transport as the buyer face (authless, stateless Streamable HTTP) and the same in-protocol identity habit: the Merchant presents a Merchant token as an ordinary tool argument, the mirror of the buyer's `agentToken`. Separate rather than one face with authorization inside shared tools, so tool-set isolation — not a runtime check — is the boundary. It owns no publish rules of its own: `confirm_product` overlays what the merchant said onto the stored draft and hands it to the same `confirmProduct` the web confirmation screen calls.
+_Avoid_: admin API, merchant dashboard, seller portal
 
 **Discovery doc**:
 The machine-readable description of both faces served at `/.well-known/agent-store.json` — MCP endpoint, REST base URL and endpoints, auth model, money conventions, and the failure shapes. How an agent landing on the bare domain picks its door.

@@ -7,7 +7,7 @@ import { listPublishedVariants } from '../domain/catalog.js';
 import { createCart, declareIntent } from '../domain/mandateFlow.js';
 import { readOrderStatus } from '../domain/orderStatus.js';
 import { submitPayment } from '../domain/submitPayment.js';
-import { Refusal, ValidationError } from '../domain/refusal.js';
+import { textResult, withToolErrors } from './toolResults.js';
 
 /**
  * The MCP face of the storefront core.
@@ -23,56 +23,6 @@ import { Refusal, ValidationError } from '../domain/refusal.js';
  * this function must stay cheap and hold no per-connection state — which is
  * also why the token rides on every call rather than in a session.
  */
-
-function textResult(payload: unknown) {
-  return { content: [{ type: 'text' as const, text: JSON.stringify(payload, null, 2) }] };
-}
-
-/**
- * Failures reach the buyer agent as `isError` results carrying a structured
- * body, never as prose. The two categories stay visibly distinct on the wire —
- * a Refusal has `recoverable`, a validation error does not — so an LLM buyer
- * can branch on which kind of "no" it received (CONTEXT.md → Failure vocabulary).
- */
-function refusalResult(refusal: Refusal) {
-  return {
-    isError: true,
-    content: [
-      { type: 'text' as const, text: JSON.stringify({ refusal: refusal.toPayload() }, null, 2) },
-    ],
-  };
-}
-
-function validationResult(error: ValidationError) {
-  return {
-    isError: true,
-    content: [
-      {
-        type: 'text' as const,
-        text: JSON.stringify({ validationError: error.toPayload() }, null, 2),
-      },
-    ],
-  };
-}
-
-/**
- * The one place domain errors become wire results. Every tool that can refuse
- * or reject wraps its handler here, so a new tool (T4's next one included)
- * inherits the mapping instead of copying the catch.
- */
-function withToolErrors<Args extends unknown[], Result>(
-  handler: (...args: Args) => Promise<Result>,
-) {
-  return async (...args: Args) => {
-    try {
-      return await handler(...args);
-    } catch (error) {
-      if (error instanceof Refusal) return refusalResult(error);
-      if (error instanceof ValidationError) return validationResult(error);
-      throw error;
-    }
-  };
-}
 
 export function createMcpServer(deps: StorefrontDeps): McpServer {
   const server = new McpServer(
