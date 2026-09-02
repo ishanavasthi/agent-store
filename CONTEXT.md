@@ -14,6 +14,10 @@ _Avoid_: buyer account, user, client
 The seller — a first-class entity owning a catalog and a signing key. v1 deploys exactly one, but nothing assumes that.
 _Avoid_: store, shop, seller
 
+**Merchant token**:
+The bearer token a Merchant presents to identify itself on the merchant face (`mrc_tok_…`), the mirror of the Agent's `agt_tok_…` on the buyer face. Minted once at seed time — adopting `MERCHANT_TOKEN` when the deployment sets it — and never rotated, so a configured connector keeps working across redeploys. Presenting a token that matches no Merchant is a Refusal (`UNKNOWN_MERCHANT_TOKEN`, recoverable) that writes no audit event: the merchant face is not the money path.
+_Avoid_: API key, merchant password, admin token, merchant credentials
+
 **Custody**:
 Where an Agent's private key lives, fixed at registration (see ADR-0004). *Custodial*: the server mints and holds the keypair and signs on the Agent's behalf (connector buyers). *Client custody*: the Agent registered with its own public key, the server stores no private key (`private_key IS NULL` — that column is the whole model), and every agent-side signature is computed client-side and verified against the registered key. Both buy through the same tools.
 _Avoid_: non-custodial account, wallet, key escrow

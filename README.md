@@ -129,8 +129,8 @@ Intent → Cart → Payment, bound by embedded hashes — before anything reache
 **Refusals and validation errors are different types.** A **Refusal** is the trust layer
 saying no on policy before money moves, and always carries
 `{code, reason, recoverable, retryAfter?}`. The vocabulary is closed and lives in one union:
-`OUT_OF_STOCK`, `UNREGISTERED_AGENT`, `OVER_BUDGET`, `OVER_CAP`, `IDEMPOTENCY_REUSE`,
-`INTENT_CONSUMED`, `PRICE_CHANGED`, `INVALID_MANDATE`.
+`OUT_OF_STOCK`, `UNREGISTERED_AGENT`, `UNKNOWN_MERCHANT_TOKEN`, `OVER_BUDGET`, `OVER_CAP`,
+`IDEMPOTENCY_REUSE`, `INTENT_CONSUMED`, `PRICE_CHANGED`, `INVALID_MANDATE`.
 A malformed argument is a plain **validation error** with a deliberately different shape
 (`{code, message}` — no `recoverable`), so neither a buyer agent nor the rule-auditor can
 confuse the two categories. A gateway **Decline** is a third thing again and lives on the
@@ -287,6 +287,7 @@ harness rather than mocked here — see `PLAN.md` §6 and the Scoreboard above.
 | `PORT` | no | Defaults to `3000`. Render and Railway set this themselves. |
 | `OPENAI_API_KEY` | no | Only for ingestion (`npm run ingest:demo`, `npm run ingest:accuracy`) — the server never reads it. |
 | `EXTRACTION_MODEL` | no | Ingestion model id; defaults to `gpt-5-mini`, which is what the committed accuracy run used. |
+| `MERCHANT_TOKEN` | no | The Merchant's bearer token for the merchant face. Unset, `npm run seed` mints one (`mrc_tok_…`) and prints it exactly once; set it to keep a token stable across redeploys of a fresh database. An already-minted token is never rotated, so setting this afterwards has no effect. |
 
 The server validates all of these at startup and names every missing one at once.
 

@@ -23,6 +23,15 @@ export type RefusalCode =
   | 'OUT_OF_STOCK'
   /** T3: the token presented matches no Agent registration (ADR-0001). */
   | 'UNREGISTERED_AGENT'
+  /**
+   * S1.1: the `merchantToken` presented on the merchant MCP face matches no
+   * Merchant. Recoverable — the operator can read the right token off the
+   * deployment (`MERCHANT_TOKEN`) and present it. Unlike `UNREGISTERED_AGENT`
+   * this writes NO audit event: the merchant face is not the money path, and
+   * the audit log is the money ledger (ADR-0003, the `confirmation.ts`
+   * precedent).
+   */
+  | 'UNKNOWN_MERCHANT_TOKEN'
   /** T5: cart total exceeds the Intent's Budget. Recoverable — a smaller cart under the same Intent can pass. */
   | 'OVER_BUDGET'
   /** T5: cumulative captured+pending spend would exceed the registration's immutable Cap. Not recoverable. */

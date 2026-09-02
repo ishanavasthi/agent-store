@@ -64,6 +64,13 @@
       "when": 1787709760977,
       "tag": "0008_ingestion_confidence",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1788385217780,
+      "tag": "0009_merchant_token",
+      "breakpoints": true
     }
   ]
 }

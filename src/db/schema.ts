@@ -48,20 +48,31 @@ export const orderStatus = pgEnum('order_status', [
 
 export const auditEventType = pgEnum('audit_event_type', AUDIT_EVENT_TYPES);
 
-export const merchants = pgTable('merchants', {
-  id: text('id').primaryKey(),
-  name: text('name').notNull(),
-  /**
-   * The Merchant's own Ed25519 signing keypair (CONTEXT.md → Merchant: "a
-   * first-class entity owning a catalog and a signing key"), stored as base64
-   * DER — SPKI public, PKCS8 private (see `src/domain/keys.ts`). Nullable
-   * because rows predate the key; `ensureMerchantSigningKey` mints it
-   * idempotently at seed time. T4's Receipts are signed with it.
-   */
-  signingPublicKey: text('signing_public_key'),
-  signingPrivateKey: text('signing_private_key'),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-});
+export const merchants = pgTable(
+  'merchants',
+  {
+    id: text('id').primaryKey(),
+    name: text('name').notNull(),
+    /**
+     * The Merchant's own Ed25519 signing keypair (CONTEXT.md → Merchant: "a
+     * first-class entity owning a catalog and a signing key"), stored as base64
+     * DER — SPKI public, PKCS8 private (see `src/domain/keys.ts`). Nullable
+     * because rows predate the key; `ensureMerchantSigningKey` mints it
+     * idempotently at seed time. T4's Receipts are signed with it.
+     */
+    signingPublicKey: text('signing_public_key'),
+    signingPrivateKey: text('signing_private_key'),
+    /**
+     * The Merchant's bearer token for the merchant MCP face (`mrc_tok_…`),
+     * the mirror of `agents.token`. Nullable because rows predate it;
+     * `ensureMerchantToken` adopts `MERCHANT_TOKEN` or mints one once at seed
+     * time and never rotates it.
+     */
+    token: text('token'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [uniqueIndex('merchants_token_idx').on(table.token)],
+);
 
 /**
  * An Agent IS its registration (ADR-0001): one custodial Ed25519 keypair plus
