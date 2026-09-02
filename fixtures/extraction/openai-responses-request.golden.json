@@ -1,0 +1,383 @@
+{
+  "note": "Captured from src/ingestion/openaiExtractionModel.ts BEFORE the S2.1 split (issue #38). Every post-refactor request must reproduce these bytes exactly; `sha256` is over the exact JSON.stringify(body) text sent on the wire.",
+  "options": {
+    "model": "gpt-5-mini",
+    "apiKey": "sk-golden-capture"
+  },
+  "cases": [
+    {
+      "name": "caption-and-image",
+      "input": {
+        "caption": "RAAT 🌙 drop is LIVE.\noversized tee, 240 gsm french terry, jet black, puff print\nS M L XL XXL — sab hai\n₹1,199/- 🖤 COD available\nlink in bio, jaldi karo warna reh jaoge 😴",
+        "image": {
+          "mediaType": "image/jpeg",
+          "base64": "/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AKp//2Q=="
+        }
+      },
+      "request": {
+        "url": "https://api.openai.com/v1/responses",
+        "method": "POST",
+        "headers": {
+          "Authorization": "Bearer sk-golden-capture",
+          "Content-Type": "application/json"
+        },
+        "body": {
+          "model": "gpt-5-mini",
+          "instructions": "You extract catalog data from an Indian D2C merchant's social-media post.\n\nYou will be given the merchant's caption and usually a photo of the product. Captions are\nHinglish (Hindi written in Latin script, mixed with English), full of emoji, and written for\nhumans, not machines. That is normal input, not an error.\n\nExtract these fields:\n\n- name: the short product title a merchant would put on a listing, in Title Case, no emoji\n  and no price: the caption's name for the product plus the full product type, stated\n  exactly once. Expand a colloquial truncation to the full garment type (\"ZORA cargos\" →\n  \"ZORA Cargo Pants\"; \"MOTI snapback\" → \"MOTI Snapback Cap\"); but when the caption's name\n  already ends in the product type (\"ROSHNI hoodie\", \"KESAR beanie\") that is the whole\n  title (\"ROSHNI Hoodie\") — never append a second type word (\"ROSHNI Hoodie Sweatshirt\"\n  is wrong). If the caption never names the product at all, name it by what the photo\n  shows it to be (e.g. \"Corduroy Bucket Hat\") — what the item IS, never a feature of it\n  (\"Water Resistant Bag\" is a feature, not a name). Do not invent a brand name.\n- description: one or two sentences of the material/fit/construction details stated in the\n  caption. Only what the caption or photo supports; never marketing you made up.\n- priceText: the price a buyer actually pays, copied VERBATIM from the caption including its\n  currency mark and punctuation (e.g. \"₹1,299/-\"). If the caption shows both a struck-through\n  or \"MRP\" price and a lower selling price, copy the LOWER selling price — the one being\n  charged. Copy exactly one amount. Shipping thresholds (\"free shipping above 999\"), COD\n  eligibility limits, COD surcharges, and another product's price mentioned in passing are\n  not this product's price. If no price is stated, null.\n- stock: the number of units available for the whole product, as an integer, ONLY if the\n  caption states a count (\"12 pieces left\", \"20 pcs ready\", \"30 pcs total across both\n  colours\"). A stated total across sizes/colours IS product stock. A per-customer purchase\n  limit (\"2 per customer max\") is NOT stock. Vague availability (\"stock ready\", \"restocked\",\n  \"in stock\", \"almost gone\", \"DM to check\") is NOT stock — return null. A count stated for\n  only ONE size/colour is not product stock either — it goes in variantStock. Guessing here\n  puts an invented quantity in a live catalog.\n- variantLabels: the size or colour options a buyer CHOOSES BETWEEN, exactly as written\n  (\"S\", \"M\", \"L\", \"XL\", \"30\", \"32\", \"lilac\"). Empty array if the caption offers no choice.\n  \"free size\" / \"one size\" / \"one size fits all\" / \"adjustable\" means there is NO choice —\n  that is an empty array, never a label. Colours that are the contents of a pack you buy\n  whole (\"pack of 3 — brown, beige, white\") are not choices either — empty array. A phrase\n  describing the item (\"one size fits all, beige\") is a description, not two variants.\n- variantStock: counts the caption states for SPECIFIC variants, as {label, count} pairs\n  whose labels come from variantLabels (\"32 mein sirf 3 pieces\" → [{\"label\": \"32\",\n  \"count\": 3}]; \"S: 4 pcs | M: 7 pcs\" → both pairs). Empty array when none are stated —\n  the common case. Vibes about one size (\"UK 10 almost gone\") are NOT a count. Never invent\n  a split from a product-level total.\n\nEvery field carries a confidence from 0 to 1: how sure you are that this exact value is what\nthe merchant meant. Be honest and use the range — a field you had to infer from the photo, or\na caption with two plausible readings, is not a 0.95. A null value takes confidence 0.",
+          "input": [
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "input_text",
+                  "text": "Caption:\nRAAT 🌙 drop is LIVE.\noversized tee, 240 gsm french terry, jet black, puff print\nS M L XL XXL — sab hai\n₹1,199/- 🖤 COD available\nlink in bio, jaldi karo warna reh jaoge 😴"
+                },
+                {
+                  "type": "input_image",
+                  "image_url": "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AKp//2Q==",
+                  "detail": "high"
+                }
+              ]
+            }
+          ],
+          "reasoning": {
+            "effort": "low"
+          },
+          "max_output_tokens": 4000,
+          "text": {
+            "format": {
+              "type": "json_schema",
+              "name": "product_extraction",
+              "strict": true,
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "object",
+                    "properties": {
+                      "value": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "confidence": {
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "value",
+                      "confidence"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "description": {
+                    "type": "object",
+                    "properties": {
+                      "value": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "confidence": {
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "value",
+                      "confidence"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "priceText": {
+                    "type": "object",
+                    "properties": {
+                      "value": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "confidence": {
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "value",
+                      "confidence"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "stock": {
+                    "type": "object",
+                    "properties": {
+                      "value": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      },
+                      "confidence": {
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "value",
+                      "confidence"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "variantLabels": {
+                    "type": "object",
+                    "properties": {
+                      "value": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "confidence": {
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "value",
+                      "confidence"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "variantStock": {
+                    "type": "object",
+                    "properties": {
+                      "value": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "label": {
+                              "type": "string"
+                            },
+                            "count": {
+                              "type": "integer"
+                            }
+                          },
+                          "required": [
+                            "label",
+                            "count"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "confidence": {
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "value",
+                      "confidence"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "name",
+                  "description",
+                  "priceText",
+                  "stock",
+                  "variantLabels",
+                  "variantStock"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "sha256": "70acec5371ce7ec2db8e4f2879df2619eaa465bd0d6e26748bf7fc930450c0db"
+      }
+    },
+    {
+      "name": "caption-only",
+      "input": {
+        "caption": "back to where it started 🌊🌆\nBombay 95 Graphic Tee — 100% combed cotton, screen print, regular fit\nsizes: M / L / XL\nRs. 899 only, shipping free 🚚\n18 pieces in this run. once gone = gone.",
+        "image": null
+      },
+      "request": {
+        "url": "https://api.openai.com/v1/responses",
+        "method": "POST",
+        "headers": {
+          "Authorization": "Bearer sk-golden-capture",
+          "Content-Type": "application/json"
+        },
+        "body": {
+          "model": "gpt-5-mini",
+          "instructions": "You extract catalog data from an Indian D2C merchant's social-media post.\n\nYou will be given the merchant's caption and usually a photo of the product. Captions are\nHinglish (Hindi written in Latin script, mixed with English), full of emoji, and written for\nhumans, not machines. That is normal input, not an error.\n\nExtract these fields:\n\n- name: the short product title a merchant would put on a listing, in Title Case, no emoji\n  and no price: the caption's name for the product plus the full product type, stated\n  exactly once. Expand a colloquial truncation to the full garment type (\"ZORA cargos\" →\n  \"ZORA Cargo Pants\"; \"MOTI snapback\" → \"MOTI Snapback Cap\"); but when the caption's name\n  already ends in the product type (\"ROSHNI hoodie\", \"KESAR beanie\") that is the whole\n  title (\"ROSHNI Hoodie\") — never append a second type word (\"ROSHNI Hoodie Sweatshirt\"\n  is wrong). If the caption never names the product at all, name it by what the photo\n  shows it to be (e.g. \"Corduroy Bucket Hat\") — what the item IS, never a feature of it\n  (\"Water Resistant Bag\" is a feature, not a name). Do not invent a brand name.\n- description: one or two sentences of the material/fit/construction details stated in the\n  caption. Only what the caption or photo supports; never marketing you made up.\n- priceText: the price a buyer actually pays, copied VERBATIM from the caption including its\n  currency mark and punctuation (e.g. \"₹1,299/-\"). If the caption shows both a struck-through\n  or \"MRP\" price and a lower selling price, copy the LOWER selling price — the one being\n  charged. Copy exactly one amount. Shipping thresholds (\"free shipping above 999\"), COD\n  eligibility limits, COD surcharges, and another product's price mentioned in passing are\n  not this product's price. If no price is stated, null.\n- stock: the number of units available for the whole product, as an integer, ONLY if the\n  caption states a count (\"12 pieces left\", \"20 pcs ready\", \"30 pcs total across both\n  colours\"). A stated total across sizes/colours IS product stock. A per-customer purchase\n  limit (\"2 per customer max\") is NOT stock. Vague availability (\"stock ready\", \"restocked\",\n  \"in stock\", \"almost gone\", \"DM to check\") is NOT stock — return null. A count stated for\n  only ONE size/colour is not product stock either — it goes in variantStock. Guessing here\n  puts an invented quantity in a live catalog.\n- variantLabels: the size or colour options a buyer CHOOSES BETWEEN, exactly as written\n  (\"S\", \"M\", \"L\", \"XL\", \"30\", \"32\", \"lilac\"). Empty array if the caption offers no choice.\n  \"free size\" / \"one size\" / \"one size fits all\" / \"adjustable\" means there is NO choice —\n  that is an empty array, never a label. Colours that are the contents of a pack you buy\n  whole (\"pack of 3 — brown, beige, white\") are not choices either — empty array. A phrase\n  describing the item (\"one size fits all, beige\") is a description, not two variants.\n- variantStock: counts the caption states for SPECIFIC variants, as {label, count} pairs\n  whose labels come from variantLabels (\"32 mein sirf 3 pieces\" → [{\"label\": \"32\",\n  \"count\": 3}]; \"S: 4 pcs | M: 7 pcs\" → both pairs). Empty array when none are stated —\n  the common case. Vibes about one size (\"UK 10 almost gone\") are NOT a count. Never invent\n  a split from a product-level total.\n\nEvery field carries a confidence from 0 to 1: how sure you are that this exact value is what\nthe merchant meant. Be honest and use the range — a field you had to infer from the photo, or\na caption with two plausible readings, is not a 0.95. A null value takes confidence 0.",
+          "input": [
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "input_text",
+                  "text": "Caption:\nback to where it started 🌊🌆\nBombay 95 Graphic Tee — 100% combed cotton, screen print, regular fit\nsizes: M / L / XL\nRs. 899 only, shipping free 🚚\n18 pieces in this run. once gone = gone."
+                }
+              ]
+            }
+          ],
+          "reasoning": {
+            "effort": "low"
+          },
+          "max_output_tokens": 4000,
+          "text": {
+            "format": {
+              "type": "json_schema",
+              "name": "product_extraction",
+              "strict": true,
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "object",
+                    "properties": {
+                      "value": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "confidence": {
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "value",
+                      "confidence"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "description": {
+                    "type": "object",
+                    "properties": {
+                      "value": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "confidence": {
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "value",
+                      "confidence"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "priceText": {
+                    "type": "object",
+                    "properties": {
+                      "value": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "confidence": {
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "value",
+                      "confidence"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "stock": {
+                    "type": "object",
+                    "properties": {
+                      "value": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      },
+                      "confidence": {
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "value",
+                      "confidence"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "variantLabels": {
+                    "type": "object",
+                    "properties": {
+                      "value": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "confidence": {
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "value",
+                      "confidence"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "variantStock": {
+                    "type": "object",
+                    "properties": {
+                      "value": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "label": {
+                              "type": "string"
+                            },
+                            "count": {
+                              "type": "integer"
+                            }
+                          },
+                          "required": [
+                            "label",
+                            "count"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "confidence": {
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "value",
+                      "confidence"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "name",
+                  "description",
+                  "priceText",
+                  "stock",
+                  "variantLabels",
+                  "variantStock"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "sha256": "f83947890bc7d8ef327c02ca6f57c5f43cb07b96621a75616e590cb1584f9671"
+      }
+    }
+  ]
+}
