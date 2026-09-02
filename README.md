@@ -25,7 +25,7 @@ Budget, and written to an append-only audit log a separate auditor re-checks.
 | Surface | What it does |
 |---|---|
 | `POST /mcp` | Authless MCP (Streamable HTTP, stateless). Six tools: `get_product`, `register_agent`, `declare_intent`, `create_cart`, `submit_payment`, `get_order_status`. |
-| `POST /merchant/mcp` | The Merchant face (S1.2): a *separate* authless MCP endpoint with its own tool set — `list_held_products`, `get_held_product`, `confirm_product`, `list_my_products` — so a buyer never sees a tool that edits the catalog. Every tool takes `merchantToken` (`MERCHANT_TOKEN`) and refuses `UNKNOWN_MERCHANT_TOKEN` without a valid one. `confirm_product` is additive: it overlays what the merchant said onto the stored draft and calls the same publish gate the web confirmation screen does, and never deletes a Variant. |
+| `POST /merchant/mcp` | The Merchant face (S1.2): a *separate* authless MCP endpoint with its own tool set — `list_held_products`, `get_held_product`, `confirm_product`, `list_my_products`, and the S1.5 reads `store_summary`, `list_recent_orders`, `get_order` — so a buyer never sees a tool that edits the catalog. Every tool takes `merchantToken` (`MERCHANT_TOKEN`) and refuses `UNKNOWN_MERCHANT_TOKEN` without a valid one. `confirm_product` is additive: it overlays what the merchant said onto the stored draft and calls the same publish gate the web confirmation screen does, and never deletes a Variant. |
 | `GET /.well-known/agent-store.json` | Discovery doc describing both protocol faces: the MCP endpoint and the REST base + endpoints, auth model, money conventions, failure shapes. |
 | `/acp/*` | The ACP-flavored REST twin (T14): `GET /acp/products`, `POST /acp/agents`, `POST /acp/intents`, `POST /acp/carts`, `POST /acp/payments`, `GET /acp/orders/:orderId` — the same core and trust layer as MCP, `Authorization: Bearer <agentToken>`. Refusals and Receipts are identical in shape on both faces. |
 | `POST /webhooks/razorpay` | Verifies the Razorpay webhook signature, then flips the domain Order to `paid` — or writes an anomaly and leaves it alone. |
@@ -388,6 +388,19 @@ ingestion held because the caption never stated a field, asks you for the missin
 and calls `confirm_product` to publish. That call is additive: send only what changed, and
 a Variant you do not mention keeps its stored values — nothing is ever deleted from chat.
 `list_my_products` shows what is currently live and buyable.
+
+#### Reading the store from chat
+
+Three read tools answer the questions a shopkeeper actually asks, and nothing more — this
+is a chat console, not the web UI in another skin:
+
+| Tool | Answers |
+| --- | --- |
+| `store_summary` | "How is the shop doing?" — Products published and held, Orders by status, revenue in integer paise for today and in total, published Variants at or below 2 units, Variants already sold out, and the Refusals as unmet demand (a count plus the last five reasons). Revenue counts paid Orders only; a refunded Order shows in the status counts, not in the money. |
+| `list_recent_orders` | "What came in?" — the latest Orders newest first (`limit`, default 10, max 50): id, status, total in paise, what was bought line by line, the Receipt's hash once one exists, and when it was created. |
+| `get_order` | "What happened on that one?" — one Order with the same audit chain `/viewer/orders/:id` replays, mandate events included, plus `complete` / `missingSteps`. An unknown id is an `ORDER_NOT_FOUND` validation error. |
+
+All three are reads: they write no audit event and change no state.
 
 ### Claude Code (testing and fallback)
 

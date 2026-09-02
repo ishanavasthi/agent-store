@@ -61,6 +61,9 @@ _Avoid_: LLM backend, vendor, gateway
 **Output mode**:
 How a provider is asked to return the extraction payload: `json_schema` (a `response_format` carrying the schema) or `tool_call` (a forced call to a single `record_extraction` function whose parameters *are* the schema). It exists because acceptance is not enforcement — OpenRouter takes a `response_format` it does not apply — so the mode is the best available approximation of strict mode, and our own zod validation, not the mode, is the guarantee.
 _Avoid_: structured output setting, response format, strict mode
+**Low stock**:
+A *published* Variant whose stock is at or below `LOW_STOCK_THRESHOLD` (2) and above zero — the merchant-facing "restock this soon". Deliberately disjoint from **sold out** (a published Variant at exactly zero stock, unbuyable right now): the two are different instructions to the merchant, and `store_summary` reports them as two lists.
+_Avoid_: out of stock (that is the buyer-side refusal case), running low, backorder
 
 ### Purchase flow
 
@@ -130,4 +133,9 @@ _Avoid_: refusal (for gateway failures), payment error
 Money having *moved* and been automatically sent back — the third member of the vocabulary, confusable with neither sibling: a Refusal is policy saying no before money moves; a Decline is the gateway saying no before money moves; an Oversell begins at a successful capture. Detected by the fulfillment-time atomic conditional stock decrement missing its row (in the same transaction as `order.paid`), it triggers the automatic full refund: the Order ends `refunded` — terminal, never again payable — with a structured `OversellPayload` (`{kind: 'oversell', code: 'OVERSOLD', reason, shortfalls, refund: {amountPaise, gatewayRefundId, refundedAt}}` — deliberately no `recoverable` and no `attempts`, so it can be mistaken for neither a Refusal nor a Decline) stored on the Order and reported at `get_order_status`, alongside the original Receipt and the merchant-signed Refund receipt referencing it by hash.
 _Avoid_: refusal or decline (for post-capture shortfalls), out-of-stock (the pre-payment refusal case), chargeback
 
+**Unmet demand**:
+Refusals read from the *Merchant's* side — a buyer agent wanted something and was told no, so the store's own rules cost it a sale. Not a fourth failure kind and never a new record: it is the same Refusal events `store_summary` counts and quotes back (a count plus the last five reasons), which is why every "unmet demand" number in this codebase is derived from `listRecentRefusals` and nothing else.
+_Avoid_: lost sales, missed revenue, abandoned carts (a Cart has no lifecycle to abandon — ADR-0002)
+
 A malformed request (bad input, schema violation) is a plain validation error — neither a Refusal, nor a Decline, nor an Oversell.
+

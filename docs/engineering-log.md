@@ -17,6 +17,31 @@ Each entry is **Symptom → Cause → Fix → Lesson**. The Cause is the mechani
 **Fix.** S2.2 owns the provider switch; `DEFAULT_EXTRACTION_MODEL`, `extractionModelId()` and `createExtractionModel()` were all kept exported and working, so S1.3's `createExtractionModelIfConfigured()` lands on top as an additive diff rather than a conflict. §7's sentence now carries a dated correction naming the real direction.
 
 **Lesson.** In a plan with parallel chains, write the seam as an invariant both sides can satisfy ("whoever lands first keeps these exports"), not as a predicted merge order — the order is the one part of a parallel plan that is not under the plan's control.
+## 2026-09-03 — S1.5 merchant reads
+
+### `unionAll` is not exported from `drizzle-orm`, only from `drizzle-orm/pg-core`
+
+**Symptom** — `import { and, eq, gte, sql, unionAll } from 'drizzle-orm'` — the
+same root import every other query in `src/domain/` uses for its operators —
+failed the typecheck with `TS2305: Module '"drizzle-orm"' has no exported
+member 'unionAll'`, while `and`, `eq`, `gte` and `sql` on the identical line
+resolved fine.
+
+**Cause** — set operators are dialect-specific in drizzle: `union`, `unionAll`,
+`intersect` and `except` are declared per dialect and exported from
+`drizzle-orm/pg-core` (`query-builders/select.d.ts`), not from the root barrel,
+which carries only the dialect-agnostic condition and SQL builders. The
+distinction is invisible at the call site — both halves read like plain query
+helpers — and drizzle's own doc comment shows the correct import only in an
+example block.
+
+**Fix** — a second import line in `src/domain/storeSummary.ts`:
+`import { unionAll } from 'drizzle-orm/pg-core'`.
+
+**Lesson** — when a drizzle symbol is missing from the root export, try the
+dialect package before assuming a version mismatch. Anything that *builds a
+statement* (set operators, table/column constructors) lives in `pg-core`;
+anything that builds a *fragment inside* one lives at the root.
 
 ## 2026-09-03 — S2.1 zod payload + golden request
 
