@@ -72,7 +72,7 @@ Landed: PR #49, 2026-09-03
 
 ### S1.3 `submit_catalog_item` — caption(+image) → existing pipeline
 Blocked by: S1.2.
-Landed: PR #PRNUM, 2026-09-03
+Landed: PR #52, 2026-09-03
 - [x] `src/ingestion/ingest.ts`: `IngestIds { productId(sourceId); variantId(sourceId, label) }`, `DEMO_INGEST_IDS` = today's `productIdForSource`/`variantIdForSource`, `IngestOptions.ids?` defaulting to it → `runIngestDemo.ts` unchanged.
 - [x] `src/ingestion/fetchImage.ts`: `fetchImage(url, { fetchImpl?, maxBytes = 4 MiB, timeoutMs = 10 s })` → `ExtractionImage`; http(s) only; D4 address guard; `content-type: image/*`; size cap by header and while streaming; `AbortSignal.timeout`. Failures → `ValidationError('INVALID_IMAGE')`.
 - [x] `src/ingestion/submission.ts` (**the WS1 seam**): `CatalogSubmission { caption; imageUrl?; imageBase64?; imageMediaType?; sourceId? }`; `SUBMISSION_INGEST_IDS` via `newId('product')` / `newId('variant')`; `sourceId = 'sub_' + (slug(client sourceId) | uuid)`; `submitCatalogItem(db, merchantId, model, submission, { fetchImpl?, now? })` → `IngestedProduct`. Blank caption / both image forms → `ValidationError('INVALID_SUBMISSION')`. No idempotency in v1.
