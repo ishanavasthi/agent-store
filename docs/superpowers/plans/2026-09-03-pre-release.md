@@ -92,11 +92,11 @@ Blocked by: S1.3.
 
 ### S1.5 Merchant reads — `store_summary`, `list_recent_orders`, `get_order`
 Blocked by: S1.2.
-- [ ] `store_summary({merchantToken})`: published/held counts; orders by status; revenue paise today/total; low-stock Variants (≤ 2); sold-out Variants; recent Refusals as unmet demand (count + last 5 reasons). Reuse `listPublishedVariants`, `listRecentOrders`, `listRecentRefusals`; one aggregate query for the counts.
-- [ ] `list_recent_orders({merchantToken, limit?})`: id, status, amount paise, variant labels, receipt id, created at — via `listRecentOrders`.
-- [ ] `get_order({merchantToken, orderId})`: `findOrderById` + `readPurchaseAuditChain` — the same data `/viewer/orders/:id` shows; unknown id → `PRODUCT_NOT_FOUND`-style validationError (`ORDER_NOT_FOUND`).
-- [ ] Merchant `instructions` gain one sentence; README subsection lists the three.
-- [ ] Tests in `merchantFace.integration.test.ts`: summary counts after seeding one paid + one cancelled order via the stub gateway (`src/testSupport`); low-stock and sold-out lists; refusals count; `get_order` chain matches `readPurchaseAuditChain`.
+- [x] `store_summary({merchantToken})`: published/held counts; orders by status; revenue paise today/total; low-stock Variants (≤ 2); sold-out Variants; recent Refusals as unmet demand (count + last 5 reasons). Reuse `listPublishedVariants`, `listRecentOrders`, `listRecentRefusals`; one aggregate query for the counts.
+- [x] `list_recent_orders({merchantToken, limit?})`: id, status, amount paise, variant labels, receipt id, created at — via `listRecentOrders`.
+- [x] `get_order({merchantToken, orderId})`: `findOrderById` + `readPurchaseAuditChain` — the same data `/viewer/orders/:id` shows; unknown id → `PRODUCT_NOT_FOUND`-style validationError (`ORDER_NOT_FOUND`).
+- [x] Merchant `instructions` gain one sentence; README subsection lists the three.
+- [x] Tests in `merchantFace.integration.test.ts`: summary counts after seeding one paid + one cancelled order via the stub gateway (`src/testSupport`); low-stock and sold-out lists; refusals count; `get_order` chain matches `readPurchaseAuditChain`.
 
 ## 5. Workstream 2 — Provider-agnostic extraction
 

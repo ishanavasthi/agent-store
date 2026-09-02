@@ -2,6 +2,12 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { MERCHANT_NAME } from '../config.js';
 import type { StorefrontDeps } from '../deps.js';
+import {
+  missingHappyPathSteps,
+  type AuditChainEntry,
+  type WireAuditEvent,
+} from '../domain/auditEvents.js';
+import { listRecentRefusals, readPurchaseAuditChain } from '../domain/auditLog.js';
 import { listPublishedVariants } from '../domain/catalog.js';
 import {
   confirmProduct,
@@ -11,8 +17,17 @@ import {
   type ConfirmationSubmission,
   type ConfirmationVariantSubmission,
 } from '../domain/confirmation.js';
+import { hashMandate } from '../domain/mandates.js';
 import { requireMerchant } from '../domain/merchants.js';
+import {
+  findOrderById,
+  listOrderItems,
+  listRecentOrders,
+  toOrderStatusView,
+} from '../domain/orders.js';
+import { findOrderReceipt } from '../domain/receipts.js';
 import { ValidationError } from '../domain/refusal.js';
+import { readStoreCounts } from '../domain/storeSummary.js';
 import { textResult, withToolErrors } from './toolResults.js';
 
 /**
@@ -159,7 +174,11 @@ export function createMerchantMcpServer(deps: StorefrontDeps): McpServer {
         `never guess them, and send only what changed: a Variant you do not mention keeps ` +
         `its stored values, and nothing is ever deleted from here. (4) list_my_products ` +
         `shows what is currently published and buyable. A published Product is live ` +
-        `immediately for buyer agents.`,
+        `immediately for buyer agents. The merchant also reads their store from here: ` +
+        `store_summary answers "how is the shop doing" in one call (catalog and order ` +
+        `counts, revenue in paise today and in total, low stock, sold out, and the ` +
+        `demand that was refused), list_recent_orders lists the latest Orders, and ` +
+        `get_order replays one Order's whole audit chain.`,
     },
   );
 
@@ -315,5 +334,192 @@ export function createMerchantMcpServer(deps: StorefrontDeps): McpServer {
     }),
   );
 
+  // ---------------------------------------------------------------------------
+  // The reads (S1.5). Three tools, deliberately not a web-UI parity set: a
+  // merchant in chat asks "how is the shop doing", "what came in", "what
+  // happened on that one". Every one of these is a pure read — no audit row, no
+  // state change — because looking at your own ledger is not an event in it.
+  // ---------------------------------------------------------------------------
+
+  /** How many units on hand still counts as "about to run out". */
+  const LOW_STOCK_THRESHOLD = 2;
+  /** Recent Refusals quoted back as unmet demand — a taste, not the log. */
+  const UNMET_DEMAND_SAMPLE = 5;
+  const RECENT_ORDERS_LIMIT = 10;
+  const RECENT_ORDERS_MAX = 50;
+
+  server.registerTool(
+    'store_summary',
+    {
+      title: 'Store summary',
+      description:
+        'One answer to "how is the shop doing": how many Products are published and how ' +
+        'many are held waiting on you, Orders by status, revenue in integer paise for ' +
+        'today and in total, the published Variants at or below ' +
+        `${LOW_STOCK_THRESHOLD} units, the ones already sold out, and how many buyer ` +
+        'requests were refused (with the last few reasons — that is demand you did not ' +
+        'meet). Revenue counts paid Orders only; a refunded Order shows in the status ' +
+        'counts, not in the money.',
+      inputSchema: { merchantToken: MERCHANT_TOKEN_ARG },
+    },
+    withToolErrors(async ({ merchantToken }) => {
+      await requireMerchant(deps.db, deps.merchantId, merchantToken, 'store_summary');
+      const [counts, live, refusals] = await Promise.all([
+        readStoreCounts(deps.db, deps.merchantId),
+        listPublishedVariants(deps.db, deps.merchantId),
+        listRecentRefusals(deps.db, deps.merchantId, UNMET_DEMAND_SAMPLE),
+      ]);
+
+      const stockLine = (variant: (typeof live)[number]) => ({
+        productId: variant.productId,
+        productTitle: variant.productTitle,
+        variantId: variant.variantId,
+        label: variant.label,
+        stock: variant.stock,
+      });
+
+      return textResult({
+        merchant: MERCHANT_NAME,
+        note: 'All money is integer paise. 49900 paise = ₹499.00.',
+        catalog: {
+          published: counts.productsByStatus.published ?? 0,
+          heldForConfirmation: counts.productsByStatus.needs_confirmation ?? 0,
+          draft: counts.productsByStatus.draft ?? 0,
+        },
+        ordersByStatus: counts.ordersByStatus,
+        revenue: {
+          todayPaise: counts.revenuePaiseToday,
+          totalPaise: counts.revenuePaiseTotal,
+        },
+        lowStock: live.filter((v) => v.stock > 0 && v.stock <= LOW_STOCK_THRESHOLD).map(stockLine),
+        soldOut: live.filter((v) => v.stock === 0).map(stockLine),
+        unmetDemand: {
+          refusals: refusals.length,
+          note:
+            `The ${UNMET_DEMAND_SAMPLE} most recent Refusals only — each one is a buyer ` +
+            'agent that wanted something and was told no.',
+          recentReasons: refusals.map((refusal) => ({
+            seq: refusal.seq,
+            type: refusal.type,
+            summary: refusal.summary,
+            code: refusal.payload['code'] ?? null,
+            reason: refusal.payload['reason'] ?? null,
+            occurredAt: refusal.occurredAt.toISOString(),
+          })),
+        },
+      });
+    }),
+  );
+
+  server.registerTool(
+    'list_recent_orders',
+    {
+      title: 'List recent orders',
+      description:
+        'The store\'s most recent Orders, newest first: id, status, total in integer ' +
+        'paise, what was bought (product title and Variant label per line), the ' +
+        "Receipt's hash once one exists, and when the Order was created. Call get_order " +
+        'with an id to see that Order\'s whole audit chain.',
+      inputSchema: {
+        merchantToken: MERCHANT_TOKEN_ARG,
+        limit: z
+          .number()
+          .int()
+          .min(1)
+          .max(RECENT_ORDERS_MAX)
+          .optional()
+          .describe(`How many Orders to return, newest first. Default ${RECENT_ORDERS_LIMIT}.`),
+      },
+    },
+    withToolErrors(async ({ merchantToken, limit }) => {
+      await requireMerchant(deps.db, deps.merchantId, merchantToken, 'list_recent_orders');
+      const recent = await listRecentOrders(deps.db, deps.merchantId, limit ?? RECENT_ORDERS_LIMIT);
+      const rows = await Promise.all(
+        recent.map(async (entry) => {
+          const [items, receipt] = await Promise.all([
+            listOrderItems(deps.db, entry.orderId),
+            findOrderReceipt(deps.db, deps.merchantId, entry.orderId),
+          ]);
+          return {
+            orderId: entry.orderId,
+            status: entry.status,
+            amountPaise: entry.total.amountPaise,
+            amountDisplay: entry.total.amountDisplay,
+            items: items.map((item) => ({
+              productTitle: item.productTitle,
+              label: item.label,
+              quantity: item.quantity,
+              unitPricePaise: item.unitPrice.amountPaise,
+            })),
+            // The Receipt is identified by the hash of its signed payload —
+            // the same value a refund receipt links back to. The database row
+            // id is an internal handle and is deliberately not published.
+            receiptHash: receipt === null ? null : hashMandate(receipt.payload),
+            createdAt: entry.createdAt,
+          };
+        }),
+      );
+      return textResult({
+        merchant: MERCHANT_NAME,
+        note: 'All money is integer paise. Newest first.',
+        orders: rows,
+      });
+    }),
+  );
+
+  server.registerTool(
+    'get_order',
+    {
+      title: 'Get order',
+      description:
+        'One Order in full, exactly as the public ledger viewer shows it: its status and ' +
+        'money, and its audit chain replayed step by step — the Intent and Cart mandates ' +
+        'that preceded it included. `complete` is false when a required step never ' +
+        'happened, and `missingSteps` names which. An unknown id is an ORDER_NOT_FOUND ' +
+        'validation error.',
+      inputSchema: {
+        merchantToken: MERCHANT_TOKEN_ARG,
+        orderId: z.string().describe('An orderId from list_recent_orders.'),
+      },
+    },
+    withToolErrors(async ({ merchantToken, orderId }) => {
+      await requireMerchant(deps.db, deps.merchantId, merchantToken, 'get_order');
+      const order = await findOrderById(deps.db, deps.merchantId, orderId);
+      if (order === null) {
+        throw new ValidationError('ORDER_NOT_FOUND', `no order ${orderId} for this merchant`);
+      }
+      // The purchase-scoped chain, not the order-scoped one: without it every
+      // mandate-backed Order reads as missing its first two steps.
+      const events = await readPurchaseAuditChain(deps.db, orderId);
+      const missingSteps = missingHappyPathSteps(events);
+      return textResult({
+        merchant: MERCHANT_NAME,
+        orderId,
+        order: toOrderStatusView(order),
+        items: (await listOrderItems(deps.db, orderId)).map((item) => ({
+          productTitle: item.productTitle,
+          label: item.label,
+          quantity: item.quantity,
+          unitPricePaise: item.unitPrice.amountPaise,
+        })),
+        complete: missingSteps.length === 0,
+        missingSteps,
+        anomalies: events.filter((event) => event.type === 'order.anomaly_detected').length,
+        events: events.map(toWireEvent),
+      });
+    }),
+  );
+
   return server;
+}
+
+/** One audit event as the merchant face spells it — the `/audit*` wire shape. */
+function toWireEvent(event: AuditChainEntry): WireAuditEvent {
+  return {
+    seq: event.seq,
+    type: event.type,
+    summary: event.summary,
+    occurredAt: event.occurredAt.toISOString(),
+    payload: event.payload,
+  };
 }

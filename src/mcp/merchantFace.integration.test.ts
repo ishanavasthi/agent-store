@@ -1,12 +1,17 @@
+import { randomUUID } from 'node:crypto';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { merchants, variants } from '../db/schema.js';
 import type { StorefrontDeps } from '../deps.js';
-import { ensureMerchantToken } from '../domain/merchants.js';
+import { readPurchaseAuditChain } from '../domain/auditLog.js';
+import { hashMandate } from '../domain/mandates.js';
+import { ensureMerchantSigningKey, ensureMerchantToken } from '../domain/merchants.js';
 import { paise } from '../domain/money.js';
-import { StubGateway } from '../gateway/stubGateway.js';
+import { applyGatewayWebhook, type WebhookOutcome } from '../domain/orders.js';
+import { findOrderReceipt } from '../domain/receipts.js';
+import { StubGateway, type SyntheticWebhook } from '../gateway/stubGateway.js';
 import {
   ingestItems,
   productIdForSource,
@@ -315,5 +320,358 @@ describe('S1.2 the merchant MCP face', () => {
         stock: 12,
       },
     ]);
+  });
+});
+
+/**
+ * S1.5 (issue #42): the merchant's three read tools, driven through the same
+ * MCP door and seeded through the real purchase path — a buyer agent buying
+ * over the buyer face, a stub gateway settling one capture and one decline,
+ * and one refusal the trust layer wrote.
+ *
+ * The proofs on trial:
+ *   1. `store_summary` counts what the database actually holds — catalog by
+ *      status, Orders by status, revenue in paise, low stock, sold out, and
+ *      the Refusals as unmet demand.
+ *   2. `list_recent_orders` is newest-first and honours `limit`.
+ *   3. `get_order` replays exactly `readPurchaseAuditChain`, and an unknown id
+ *      is an ORDER_NOT_FOUND validation error shaped like PRODUCT_NOT_FOUND.
+ *   4. The `merchantToken` gate covers all three, writing no audit event.
+ */
+
+// A fourth caption that stays on the queue, so "held" is a non-zero count.
+const HELD = '11-noor-shirt';
+
+const READ_EXTRACTIONS: Record<string, ProductExtraction> = {
+  ...EXTRACTIONS,
+  [HELD]: confident({
+    name: { value: 'Noor Camp Shirt', confidence: 0.96 },
+    price: { value: paise(159900), confidence: 0.95 },
+    priceText: { value: '₹1,599/-', confidence: 0.95 },
+  }),
+};
+
+const readsModel: ExtractionModel = {
+  modelId: 'canned-extractor',
+  extract: (input: ExtractionInput): Promise<ExtractionResult> => {
+    const extraction = READ_EXTRACTIONS[input.caption];
+    if (extraction === undefined) throw new Error(`No canned extraction for: ${input.caption}`);
+    return Promise.resolve({ extraction, modelId: 'canned-extractor-2026-09-03', rawResponse: '{}' });
+  },
+};
+
+const HELD_PRODUCT = productIdForSource(HELD);
+
+/** The three read tools, with the arguments each needs beyond the token. */
+const EVERY_READ_TOOL: ReadonlyArray<[string, Record<string, unknown>]> = [
+  ['store_summary', {}],
+  ['list_recent_orders', {}],
+  ['get_order', { orderId: 'ord_nope' }],
+];
+
+describe('S1.5 the merchant read tools', () => {
+  let handle: TestDatabaseHandle;
+  let gateway: StubGateway;
+  let deps: StorefrontDeps;
+  let merchant: Client;
+  let buyer: Client;
+  let merchantToken: string;
+  let paidOrderId: string;
+  let cancelledOrderId: string;
+
+  /** The same three steps the webhook route performs, minus the socket. */
+  async function deliver(hook: SyntheticWebhook): Promise<WebhookOutcome> {
+    expect(deps.gateway.verifyWebhookSignature(hook.rawBody, hook.signature)).toBe(true);
+    const event = deps.gateway.parseWebhookEvent(hook.rawBody);
+    return applyGatewayWebhook(deps.db, deps.merchantId, event, deps.gateway.name);
+  }
+
+  /** Register → declare → cart → submit, as a buyer agent actually does it. */
+  async function purchase(
+    agentToken: string,
+    variantId: string,
+  ): Promise<{ orderId: string; gatewayPaymentLinkId: string }> {
+    const intent = await call(buyer, 'declare_intent', {
+      agentToken,
+      want: 'something from this store',
+      budgetPaise: 400000,
+    });
+    expect(intent.isError).toBe(false);
+    const cart = await call(buyer, 'create_cart', {
+      agentToken,
+      intentHash: intent.body['intentHash'],
+      items: [{ variantId, quantity: 1 }],
+    });
+    expect(cart.isError).toBe(false);
+    const submitted = await call(buyer, 'submit_payment', {
+      agentToken,
+      cartHash: cart.body['cartHash'],
+      idempotencyKey: randomUUID(),
+    });
+    expect(submitted.isError, JSON.stringify(submitted.body)).toBe(false);
+    return {
+      orderId: submitted.body['orderId'] as string,
+      gatewayPaymentLinkId: submitted.body['gatewayPaymentLinkId'] as string,
+    };
+  }
+
+  beforeEach(async () => {
+    handle = await createTestDatabase();
+    gateway = new StubGateway();
+    deps = {
+      db: handle.db,
+      gateway,
+      merchantId: MERCHANT_ID,
+      publicBaseUrl: 'https://merchant.example',
+    };
+    await handle.db.insert(merchants).values({ id: MERCHANT_ID, name: 'Kalaakar Streetwear' });
+    // A Receipt is merchant-signed, so the key has to exist before any capture.
+    await ensureMerchantSigningKey(handle.db, MERCHANT_ID);
+    merchantToken = (await ensureMerchantToken(handle.db, MERCHANT_ID)).token;
+
+    await ingestItems(handle.db, MERCHANT_ID, readsModel, [
+      item(TEE),
+      item(CARGO),
+      item(AUTO),
+      item(HELD),
+    ]);
+
+    merchant = new Client({ name: 'test-merchant', version: '0.0.0' });
+    const merchantPair = InMemoryTransport.createLinkedPair();
+    await Promise.all([
+      createMerchantMcpServer(deps).connect(merchantPair[1]),
+      merchant.connect(merchantPair[0]),
+    ]);
+
+    buyer = new Client({ name: 'test-buyer', version: '0.0.0' });
+    const buyerPair = InMemoryTransport.createLinkedPair();
+    await Promise.all([createMcpServer(deps).connect(buyerPair[1]), buyer.connect(buyerPair[0])]);
+
+    // Publish the two held Products, leaving HELD on the queue. CARGO's S is
+    // confirmed at zero — a stated sell-out, which is a fact, not a hold.
+    await call(merchant, 'confirm_product', {
+      merchantToken,
+      productId: TEE_PRODUCT,
+      variants: [{ variantId: TEE_VARIANT, stock: 3 }],
+    });
+    await call(merchant, 'confirm_product', {
+      merchantToken,
+      productId: CARGO_PRODUCT,
+      variants: [
+        { variantId: CARGO_S, stock: 0 },
+        { variantId: CARGO_M, stock: 6 },
+        { variantId: CARGO_L, stock: 5 },
+      ],
+    });
+
+    const registration = await call(buyer, 'register_agent', { capPaise: 500000 });
+    const agentToken = registration.body['agentToken'] as string;
+
+    // One Order that pays: TEE, 119900 paise, stock 3 → 2 (low stock).
+    const paid = await purchase(agentToken, TEE_VARIANT);
+    paidOrderId = paid.orderId;
+    const captures = gateway.completePayment(paid.gatewayPaymentLinkId);
+    expect(await deliver(captures[0]!)).toEqual({ result: 'order_paid', orderId: paidOrderId });
+    await deliver(captures[1]!);
+
+    // One Order that fails closed: CARGO M, declined twice (PAYMENT_ATTEMPT_LIMIT).
+    const doomed = await purchase(agentToken, CARGO_M);
+    cancelledOrderId = doomed.orderId;
+    await deliver(gateway.failPayment(doomed.gatewayPaymentLinkId)[0]!);
+    const cancelled = await deliver(gateway.failPayment(doomed.gatewayPaymentLinkId)[0]!);
+    expect(cancelled.result).toBe('order_cancelled');
+
+    // One Refusal: a second agent whose Cap cannot cover the cheapest thing.
+    const tight = await call(buyer, 'register_agent', { capPaise: 1000 });
+    const tightToken = tight.body['agentToken'] as string;
+    const intent = await call(buyer, 'declare_intent', {
+      agentToken: tightToken,
+      want: 'a tee',
+      budgetPaise: 400000,
+    });
+    const cart = await call(buyer, 'create_cart', {
+      agentToken: tightToken,
+      intentHash: intent.body['intentHash'],
+      items: [{ variantId: TEE_VARIANT, quantity: 1 }],
+    });
+    const refused = await call(buyer, 'submit_payment', {
+      agentToken: tightToken,
+      cartHash: cart.body['cartHash'],
+      idempotencyKey: randomUUID(),
+    });
+    expect(refused.isError).toBe(true);
+    expect((refused.body['refusal'] as Record<string, unknown>)['code']).toBe('OVER_CAP');
+  });
+
+  afterEach(async () => {
+    await merchant.close();
+    await buyer.close();
+    await handle.close();
+  });
+
+  // --- The gate (D1) -------------------------------------------------------
+
+  it('refuses UNKNOWN_MERCHANT_TOKEN on every read tool, and writes no audit event', async () => {
+    const before = await auditChain(deps.db);
+
+    for (const [name, args] of EVERY_READ_TOOL) {
+      const missing = await call(merchant, name, args);
+      expect(missing.isError, `${name} without a token`).toBe(true);
+      expect(missing.body['refusal']).toMatchObject({
+        code: 'UNKNOWN_MERCHANT_TOKEN',
+        recoverable: true,
+      });
+
+      const wrong = await call(merchant, name, { ...args, merchantToken: 'mrc_tok_nope' });
+      expect(wrong.isError, `${name} with a wrong token`).toBe(true);
+      expect(wrong.body['refusal']).toMatchObject({ code: 'UNKNOWN_MERCHANT_TOKEN' });
+      expect(JSON.stringify(wrong.body)).not.toContain('mrc_tok_nope');
+    }
+
+    // Reads are reads: neither the refusals above nor the successful calls
+    // below add anything to the money ledger.
+    await call(merchant, 'store_summary', { merchantToken });
+    await call(merchant, 'list_recent_orders', { merchantToken });
+    await call(merchant, 'get_order', { merchantToken, orderId: paidOrderId });
+    expect(await auditChain(deps.db)).toEqual(before);
+  });
+
+  // --- store_summary -------------------------------------------------------
+
+  it('store_summary counts the catalog, the Orders and the money in paise', async () => {
+    const { isError, body } = await call(merchant, 'store_summary', { merchantToken });
+    expect(isError).toBe(false);
+
+    // TEE, CARGO and AUTO published; HELD still waiting on the merchant.
+    expect(body['catalog']).toEqual({ published: 3, heldForConfirmation: 1, draft: 0 });
+    expect(body['ordersByStatus']).toEqual({ paid: 1, cancelled: 1 });
+    // Integer paise, never rupees: the one paid Order is the TEE at ₹1,199.00,
+    // and the cancelled CARGO Order contributes nothing.
+    expect(body['revenue']).toEqual({ todayPaise: 119900, totalPaise: 119900 });
+  });
+
+  it('store_summary names the low-stock and sold-out Variants', async () => {
+    const { body } = await call(merchant, 'store_summary', { merchantToken });
+
+    // TEE was confirmed at 3 and one unit sold: 2 is at the threshold.
+    expect(body['lowStock']).toEqual([
+      {
+        productId: TEE_PRODUCT,
+        productTitle: 'RAAT Oversized Tee',
+        variantId: TEE_VARIANT,
+        label: null,
+        stock: 2,
+      },
+    ]);
+    // Sold out is its own list, never folded into low stock.
+    expect(body['soldOut']).toEqual([
+      {
+        productId: CARGO_PRODUCT,
+        productTitle: 'Galli Cargo Pants',
+        variantId: CARGO_S,
+        label: 'S',
+        stock: 0,
+      },
+    ]);
+    // The held Product is invisible here in whole: it is not buyable yet.
+    expect(JSON.stringify(body['lowStock']) + JSON.stringify(body['soldOut'])).not.toContain(
+      HELD_PRODUCT,
+    );
+  });
+
+  it('store_summary reports the Refusals as unmet demand, newest reasons quoted', async () => {
+    const { body } = await call(merchant, 'store_summary', { merchantToken });
+    const unmet = body['unmetDemand'] as Record<string, unknown>;
+
+    expect(unmet['refusals']).toBe(1);
+    const reasons = unmet['recentReasons'] as Array<Record<string, unknown>>;
+    expect(reasons).toHaveLength(1);
+    expect(reasons[0]).toMatchObject({ type: 'payment.refused', code: 'OVER_CAP' });
+    expect(typeof reasons[0]!['reason']).toBe('string');
+  });
+
+  // --- list_recent_orders --------------------------------------------------
+
+  it('list_recent_orders is newest first, in paise, with lines and the Receipt hash', async () => {
+    const { isError, body } = await call(merchant, 'list_recent_orders', { merchantToken });
+    expect(isError).toBe(false);
+
+    const rows = body['orders'] as Array<Record<string, any>>;
+    expect(rows.map((row) => row.orderId)).toEqual([cancelledOrderId, paidOrderId]);
+
+    const paid = rows[1]!;
+    expect(paid.status).toBe('paid');
+    expect(paid.amountPaise).toBe(119900);
+    expect(paid.items).toEqual([
+      {
+        productTitle: 'RAAT Oversized Tee',
+        label: null,
+        quantity: 1,
+        unitPricePaise: 119900,
+      },
+    ]);
+    // The Receipt is identified by its payload hash — the same value the
+    // buyer's own Receipt carries.
+    const receipt = await findOrderReceipt(deps.db, MERCHANT_ID, paidOrderId);
+    expect(paid.receiptHash).toBe(hashMandate(receipt!.payload));
+    expect(typeof paid.createdAt).toBe('string');
+
+    // A cancelled Order never had a Receipt to show.
+    expect(rows[0]!.status).toBe('cancelled');
+    expect(rows[0]!.receiptHash).toBeNull();
+  });
+
+  it('list_recent_orders honours limit', async () => {
+    const { body } = await call(merchant, 'list_recent_orders', { merchantToken, limit: 1 });
+    const rows = body['orders'] as Array<Record<string, any>>;
+    expect(rows.map((row) => row.orderId)).toEqual([cancelledOrderId]);
+  });
+
+  // --- get_order -----------------------------------------------------------
+
+  it('get_order replays exactly the purchase audit chain the viewer shows', async () => {
+    const { isError, body } = await call(merchant, 'get_order', {
+      merchantToken,
+      orderId: paidOrderId,
+    });
+    expect(isError).toBe(false);
+
+    const chain = await readPurchaseAuditChain(deps.db, paidOrderId);
+    const events = body['events'] as Array<Record<string, unknown>>;
+    expect(events.map((event) => event.seq)).toEqual(chain.map((entry) => entry.seq));
+    expect(events.map((event) => event.type)).toEqual(chain.map((entry) => entry.type));
+    // The mandate events written before the Order existed are in the chain —
+    // without them a completed purchase would read as incomplete.
+    expect(events.map((event) => event.type)).toContain('mandate.intent_declared');
+
+    expect(body['complete']).toBe(true);
+    expect(body['missingSteps']).toEqual([]);
+    expect(body['anomalies']).toBe(0);
+    expect(body['order']).toMatchObject({
+      orderId: paidOrderId,
+      status: 'paid',
+      total: { amountPaise: 119900 },
+    });
+  });
+
+  it('get_order shows a cancelled Order as incomplete, with its Decline', async () => {
+    const { body } = await call(merchant, 'get_order', {
+      merchantToken,
+      orderId: cancelledOrderId,
+    });
+    expect(body['complete']).toBe(false);
+    expect(body['missingSteps']).not.toEqual([]);
+    expect(body['order']).toMatchObject({
+      status: 'cancelled',
+      decline: { kind: 'decline' },
+    });
+  });
+
+  it('get_order on an unknown id is an ORDER_NOT_FOUND validation error', async () => {
+    const missing = await call(merchant, 'get_order', { merchantToken, orderId: 'ord_nope' });
+    expect(missing.isError).toBe(true);
+    // A validation error, NOT a Refusal — exactly as PRODUCT_NOT_FOUND is.
+    expect(missing.body['refusal']).toBeUndefined();
+    expect(missing.body['validationError']).toMatchObject({ code: 'ORDER_NOT_FOUND' });
   });
 });

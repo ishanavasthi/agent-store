@@ -33,8 +33,11 @@ const BUYER_TOOLS = [
 const MERCHANT_TOOLS = [
   'confirm_product',
   'get_held_product',
+  'get_order',
   'list_held_products',
   'list_my_products',
+  'list_recent_orders',
+  'store_summary',
 ];
 
 describe('S1.2 the two MCP faces over real HTTP', () => {
