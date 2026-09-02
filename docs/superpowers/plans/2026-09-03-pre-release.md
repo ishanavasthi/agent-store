@@ -125,7 +125,7 @@ Landed: PR #50, 2026-09-03
 
 ### S2.3 Live runs, smoke + compare scripts, decision record
 Blocked by: S2.2.
-Landed: PR #PRNUM, 2026-09-03
+Landed: PR #54, 2026-09-03
 - [x] `runAccuracy.ts`: openai keeps `runs/<model>.json`; other providers → `runs/<provider>-<slug(model)>-<slug(outputMode)>.json` (*corrected 2026-09-03:* the plan's `<provider>-<model>.json` collides for the two output modes of one model, which would have silently overwritten one of the four asked-for records — see DECISIONS.md); record gains `provider`, `outputMode`.
 - [x] `runExtractionSmoke.ts` + `ingest:smoke` (`--items=N`, default 3, no DB); `runCompare.ts` + `ingest:compare` (table over `runs/*.json`).
 - [x] Live: attempted all four planned runs; **one produced a record** — `z-ai/glm-5.3-flash` × `tool_call`, committed, with the comparison and the full outcome table in `fixtures/demo-dataset/README.md`. `z-ai/glm-5.3-flash` × `json_schema` did not complete (three attempts, all stopping on item 23 — token cap, then two timeouts). `minimax/minimax-m3:free` dropped at §6 ladder rung 3 after `ingest:smoke` failed on its *first* item in both modes (markdown-fenced JSON under `response_format`; a flattened `variantLabels` under a forced strict tool call). Ranking applied as specified — and **no OpenRouter configuration clears `publishedWithWrongField === []`**: GLM `tool_call` auto-published a summed stock total on `23-machli-mesh-shorts`. The demo-model decision is escalated to the owner with the numbers (DECISIONS.md + `## FOR MORNING_REVIEW`); §8's gate row is **not** met by any OpenRouter record.
