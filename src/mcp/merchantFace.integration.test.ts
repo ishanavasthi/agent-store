@@ -438,36 +438,6 @@ describe('S1.5 the merchant read tools', () => {
       item(HELD),
     ]);
 
- * S1.3 (issue #41): the tracer bullet — a Merchant adds a product from chat and
- * a buyer can buy it, without a browser anywhere in the story.
- *
- * Appended as its own block rather than folded into the S1.2 suite above: it
- * needs a different `deps` (one carrying an extraction model), and this file is
- * edited by more than one ticket in flight.
- */
-describe('S1.3 submit_catalog_item', () => {
-  // Stock deliberately unstated — the 0.90 gate firing on camera IS the demo
-  // beat (plan §4), so the tracer exercises exactly that path.
-  const SUBMITTED_CAPTION =
-    'NEW DROP 🔥 Sarhad Panelled Jacket — heavyweight cotton, ₹2,499/- only. DM to order.';
-
-  const submittedExtraction: ProductExtraction = {
-    name: { value: 'Sarhad Panelled Jacket', confidence: 0.96 },
-    description: { value: 'Heavyweight cotton panelled jacket.', confidence: 0.94 },
-    price: { value: paise(249900), confidence: 0.97 },
-    priceText: { value: '₹2,499/-', confidence: 0.97 },
-    stock: { value: null, confidence: 0 },
-    variantLabels: { value: [], confidence: 0.95 },
-    variantStock: { value: {}, confidence: 0.95 },
-  };
-
-  let handle: TestDatabaseHandle;
-  let merchant: Client;
-  let buyer: Client;
-  let merchantToken: string;
-  let seen: ExtractionInput[];
-
-  async function connect(deps: StorefrontDeps): Promise<void> {
     merchant = new Client({ name: 'test-merchant', version: '0.0.0' });
     const merchantPair = InMemoryTransport.createLinkedPair();
     await Promise.all([
@@ -533,25 +503,6 @@ describe('S1.3 submit_catalog_item', () => {
     });
     expect(refused.isError).toBe(true);
     expect((refused.body['refusal'] as Record<string, unknown>)['code']).toBe('OVER_CAP');
-    buyer = new Client({ name: 'test-buyer', version: '0.0.0' });
-    const buyerPair = InMemoryTransport.createLinkedPair();
-    await Promise.all([createMcpServer(deps).connect(buyerPair[1]), buyer.connect(buyerPair[0])]);
-  }
-
-  function baseDeps(): StorefrontDeps {
-    return {
-      db: handle.db,
-      gateway: new StubGateway(),
-      merchantId: MERCHANT_ID,
-      publicBaseUrl: 'https://merchant.example',
-    };
-  }
-
-  beforeEach(async () => {
-    handle = await createTestDatabase();
-    await handle.db.insert(merchants).values({ id: MERCHANT_ID, name: 'Kalaakar Streetwear' });
-    merchantToken = (await ensureMerchantToken(handle.db, MERCHANT_ID)).token;
-    seen = [];
   });
 
   afterEach(async () => {
@@ -724,6 +675,73 @@ describe('S1.3 submit_catalog_item', () => {
     // A validation error, NOT a Refusal — exactly as PRODUCT_NOT_FOUND is.
     expect(missing.body['refusal']).toBeUndefined();
     expect(missing.body['validationError']).toMatchObject({ code: 'ORDER_NOT_FOUND' });
+  });
+});
+
+/**
+ * S1.3 (issue #41): the tracer bullet — a Merchant adds a product from chat and
+ * a buyer can buy it, without a browser anywhere in the story.
+ *
+ * Appended as its own block rather than folded into the S1.2 suite above: it
+ * needs a different `deps` (one carrying an extraction model), and this file is
+ * edited by more than one ticket in flight.
+ */
+describe('S1.3 submit_catalog_item', () => {
+  // Stock deliberately unstated — the 0.90 gate firing on camera IS the demo
+  // beat (plan §4), so the tracer exercises exactly that path.
+  const SUBMITTED_CAPTION =
+    'NEW DROP 🔥 Sarhad Panelled Jacket — heavyweight cotton, ₹2,499/- only. DM to order.';
+
+  const submittedExtraction: ProductExtraction = {
+    name: { value: 'Sarhad Panelled Jacket', confidence: 0.96 },
+    description: { value: 'Heavyweight cotton panelled jacket.', confidence: 0.94 },
+    price: { value: paise(249900), confidence: 0.97 },
+    priceText: { value: '₹2,499/-', confidence: 0.97 },
+    stock: { value: null, confidence: 0 },
+    variantLabels: { value: [], confidence: 0.95 },
+    variantStock: { value: {}, confidence: 0.95 },
+  };
+
+  let handle: TestDatabaseHandle;
+  let merchant: Client;
+  let buyer: Client;
+  let merchantToken: string;
+  let seen: ExtractionInput[];
+
+  async function connect(deps: StorefrontDeps): Promise<void> {
+    merchant = new Client({ name: 'test-merchant', version: '0.0.0' });
+    const merchantPair = InMemoryTransport.createLinkedPair();
+    await Promise.all([
+      createMerchantMcpServer(deps).connect(merchantPair[1]),
+      merchant.connect(merchantPair[0]),
+    ]);
+    buyer = new Client({ name: 'test-buyer', version: '0.0.0' });
+    const buyerPair = InMemoryTransport.createLinkedPair();
+    await Promise.all([createMcpServer(deps).connect(buyerPair[1]), buyer.connect(buyerPair[0])]);
+  }
+
+  function baseDeps(): StorefrontDeps {
+    return {
+      db: handle.db,
+      gateway: new StubGateway(),
+      merchantId: MERCHANT_ID,
+      publicBaseUrl: 'https://merchant.example',
+    };
+  }
+
+  beforeEach(async () => {
+    handle = await createTestDatabase();
+    await handle.db.insert(merchants).values({ id: MERCHANT_ID, name: 'Kalaakar Streetwear' });
+    merchantToken = (await ensureMerchantToken(handle.db, MERCHANT_ID)).token;
+    seen = [];
+  });
+
+  afterEach(async () => {
+    await merchant.close();
+    await buyer.close();
+    await handle.close();
+  });
+
   const submittingModel = (): ExtractionModel => ({
     modelId: 'canned-extractor',
     extract: (input: ExtractionInput): Promise<ExtractionResult> => {

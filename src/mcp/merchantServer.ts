@@ -513,6 +513,8 @@ export function createMerchantMcpServer(deps: StorefrontDeps): McpServer {
         events: events.map(toWireEvent),
       });
     }),
+  );
+
   // --- S1.3: the front door ------------------------------------------------
   // Registered last deliberately: this file is edited by more than one ticket,
   // and appending keeps the diffs disjoint.
