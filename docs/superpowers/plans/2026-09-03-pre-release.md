@@ -148,11 +148,28 @@ WS2:  S2.1 ─► S2.2 ─► S2.3
 
 **Coordinator loop** (a fresh session, `orchestration` skill): spawn the frontier (initially S1.1 and S2.1), wait `worker_done`, verify (`gh pr checks` green, read the diff against the ticket's acceptance criteria), merge, spawn the tickets the merge unblocked. Never merge red; never merge without the ticket's tests present.
 
-**Worker contract** (in every spawn prompt): read this document's section for the ticket and the ticket body; `/tdd` one behaviour at a time; per-worktree install is `npx --yes npm@10.9.3 ci` (the lockfile trap); `npm run typecheck && npm test` green; PR titled `<ticket-id>: <title>` referencing the issue; engineering-log entry for anything that broke; then `worker_done`.
+**Worker contract** (in every spawn prompt): read this document's section for the ticket and the ticket body; `/tdd` one behaviour at a time; per-worktree install is `npx --yes npm@10.9.3 ci` (the lockfile trap) and `.env` is copied from the main checkout (worktrees do not share untracked files; never commit it); `npm run typecheck && npm test` green; PR titled `<ticket-id>: <title>` referencing the issue; the documentation discipline below satisfied **in the same PR**; then `worker_done`.
+
+**Documentation discipline — every ticket, same PR, verified by the coordinator before merge.** The repo's docs are the product's memory and they go stale the moment a PR merges without them:
+
+| When the ticket… | …the PR also updates |
+|---|---|
+| lands anything | this document: tick the ticket's `- [ ]` boxes; add a one-line "Landed: PR #n, <date>" under the slice heading |
+| makes a choice not forced by the plan (a default, a shape, a rejected alternative) | `DECISIONS.md` — dated entry, what/why/alternatives, flagged "for veto" if the owner did not choose it |
+| hits a bug, a red build, a dependency contradicting its docs, or a trap | `docs/engineering-log.md` — Symptom → Cause → Fix → (Lesson), newest first under a `## 2026-09-0N — <ticket> <label>` heading, written when found, not at the end |
+| introduces or sharpens a domain term | `CONTEXT.md` glossary (house entry format; add `_Avoid_` synonyms) — S1.4 owns the bulk, but a term coined earlier goes in with the ticket that coined it |
+| changes what a user, operator or connector sees | `README.md` (env table, connector sections, Refusal codes, npm scripts) |
+| makes a hard-to-reverse, surprising, traded-off decision | `docs/adr/000N-…md` (ADR-0005 is S1.4's; anything else must pass all three criteria) |
+| leaves something only the owner can do or judge (a live run, a rehearsal, a wording veto, an env value) | `../agent-store-pvt/pre-release/MORNING_REVIEW.md` — append, ordered by importance |
+| merges | coordinator appends the PR line to `../agent-store-pvt/pre-release/HANDOFF.md` (what landed, integration done between merges, test counts) |
+
+The coordinator refuses to merge a PR whose diff touches code but none of the docs above when the table says it should; "docs later" is not a state.
 
 **Trigger for the fresh session** — paste:
 
-> `/spawn-agent` — implement the pre-release tickets in `docs/superpowers/plans/2026-09-03-pre-release.md` §7 as two Orca-worktree chains (WS1: #37→#39→#41→#43, #42 after #39; WS2: #38→#40→#44), one terminal per ticket, using the worker contract in §7; coordinate with the `orchestration` skill: merge only green PRs, rebase WS2 after S1.3.
+> `/spawn-agent` — implement the pre-release tickets in `docs/superpowers/plans/2026-09-03-pre-release.md` §7 as two Orca-worktree chains (WS1: #37→#39→#41→#43, #42 after #39; WS2: #38→#40→#44), one terminal per ticket, using the worker contract and documentation discipline in §7; coordinate with the `orchestration` skill: merge only green PRs whose docs are updated, rebase WS2 after S1.3, and keep `../agent-store-pvt/pre-release/{HANDOFF,MORNING_REVIEW}.md` current after every merge.
+
+**Unattended runs:** the owner may be AFK. Workers must not block on permission prompts — spawn them in a non-interactive permission mode appropriate to a throwaway worktree, and route anything that needs a human (an env value, a wording veto, a live take) to `MORNING_REVIEW.md` instead of waiting. Deploying to Railway needs a linked `railway` CLI (`railway link`, interactive) — if it is not linked, deployment is the owner's step and goes on `MORNING_REVIEW.md` with the exact env block.
 
 Fallback without Orca: `Agent` with `isolation: "worktree"`, same contract, coordinator in-session.
 
