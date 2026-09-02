@@ -1,5 +1,5 @@
 import { MERCHANT_ID, MERCHANT_NAME, loadConfig } from '../config.js';
-import { ensureMerchantSigningKey } from '../domain/merchants.js';
+import { ensureMerchantSigningKey, ensureMerchantToken } from '../domain/merchants.js';
 import { createDatabase } from './client.js';
 import { merchants, products, variants } from './schema.js';
 
@@ -34,6 +34,11 @@ async function seed(): Promise<void> {
     // re-seeding must never rotate it under previously issued signatures.
     const signingKey = await ensureMerchantSigningKey(db, MERCHANT_ID);
 
+    // The merchant MCP face's bearer token (S1.1). `MERCHANT_TOKEN` wins over
+    // minting, so a redeploy keeps the token a connector is already configured
+    // with; an already-minted token is never rotated either way.
+    const merchantToken = await ensureMerchantToken(db, MERCHANT_ID, process.env.MERCHANT_TOKEN);
+
     await db
       .insert(products)
       .values({
@@ -62,6 +67,12 @@ async function seed(): Promise<void> {
 
     console.log(`[seed] merchant ${MERCHANT_ID}`);
     console.log(`[seed] merchant signing key ${signingKey.publicKey.slice(0, 16)}… (Ed25519)`);
+    // Printed once, and only by the run that minted it: this is the only time
+    // the token is ever echoed. Afterwards it lives in the row and in
+    // MERCHANT_TOKEN.
+    if (merchantToken.minted) {
+      console.log(`[seed] merchant token ${merchantToken.token} — set MERCHANT_TOKEN to keep it`);
+    }
     console.log(`[seed] product  ${PRODUCT_ID} (published)`);
     console.log(`[seed] variant  ${VARIANT_ID} — 129900 paise, stock 25`);
   } finally {

@@ -55,11 +55,12 @@ One new seam: `submitCatalogItem()` in `src/ingestion/submission.ts`. Everything
 
 ### S1.1 Merchant token — schema, migration, seed, gate
 Blocked by: none.
-- [ ] `src/db/schema.ts`: `merchants.token text` nullable + `uniqueIndex('merchants_token_idx')`; `npx drizzle-kit generate --name merchant_token` → `drizzle/0009_merchant_token.sql` + journal + snapshot.
-- [ ] `src/domain/merchants.ts`: `newMerchantToken()` (`mrc_tok_` + 32 random bytes base64url, as `newAgentToken`), `ensureMerchantToken(db, merchantId, preferred?)` (env wins; else race-safe `UPDATE … WHERE token IS NULL`, as `ensureMerchantSigningKey`), `requireMerchant(db, merchantId, merchantToken, tool)` → `MerchantRow` | `Refusal(UNKNOWN_MERCHANT_TOKEN)`.
-- [ ] `src/domain/refusal.ts`: `UNKNOWN_MERCHANT_TOKEN` in `RefusalCode` (TS only).
-- [ ] `src/db/seed.ts`: `ensureMerchantToken(db, MERCHANT_ID, process.env.MERCHANT_TOKEN)`; log once when minted. `.env.example`: `MERCHANT_TOKEN=`.
-- [ ] Tests (`src/domain/merchants.integration.test.ts`): mint once / never rotate; env token adopted idempotently; `requireMerchant` happy + refusal shape + audit chain still empty.
+Landed: PR #PRNUM, 2026-09-03
+- [x] `src/db/schema.ts`: `merchants.token text` nullable + `uniqueIndex('merchants_token_idx')`; `npx drizzle-kit generate --name merchant_token` → `drizzle/0009_merchant_token.sql` + journal + snapshot.
+- [x] `src/domain/merchants.ts`: `newMerchantToken()` (`mrc_tok_` + 32 random bytes base64url, as `newAgentToken`), `ensureMerchantToken(db, merchantId, preferred?)` (env wins; else race-safe `UPDATE … WHERE token IS NULL`, as `ensureMerchantSigningKey`), `requireMerchant(db, merchantId, merchantToken, tool)` → `MerchantRow` | `Refusal(UNKNOWN_MERCHANT_TOKEN)`.
+- [x] `src/domain/refusal.ts`: `UNKNOWN_MERCHANT_TOKEN` in `RefusalCode` (TS only).
+- [x] `src/db/seed.ts`: `ensureMerchantToken(db, MERCHANT_ID, process.env.MERCHANT_TOKEN)`; log once when minted. `.env.example`: `MERCHANT_TOKEN=`.
+- [x] Tests (`src/domain/merchants.integration.test.ts`): mint once / never rotate; env token adopted idempotently; `requireMerchant` happy + refusal shape + audit chain still empty.
 
 ### S1.2 Merchant face skeleton — confirmation-in-chat tools + `/merchant/mcp`
 Blocked by: S1.1.
