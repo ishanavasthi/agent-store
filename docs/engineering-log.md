@@ -8,6 +8,16 @@ Each entry is **Symptom → Cause → Fix → Lesson**. The Cause is the mechani
 
 ---
 
+## 2026-09-03 — S1.4 demo images: `express.static({ fallthrough: false })` turns a missing file into a 500
+
+**Symptom.** With the plan's exact mount — `app.use('/demo/images', express.static('fixtures/demo-dataset/images', { fallthrough: false, maxAge: '1h' }))` — a request for a photo that exists is fine, but `GET /demo/images/no-such-drop.jpg` answers **500 `{"error":"internal_error"}`** and logs `unhandled request error` as though the server had crashed.
+
+**Cause.** `fallthrough: false` does not send a 404 itself. It builds an `HttpError` with `status: 404` and hands it to `next(err)`, which is the whole point of the option: the miss becomes a *decided* answer instead of falling through to later routes (which is what would otherwise serve the viewer SPA's `index.html` for a missing JPEG). This app's final error handler answered every error identically — `res.status(500).json({ error: 'internal_error' })` — so a deliberate 404 arrived as an unexplained crash, complete with a scary log line on a path a judge might well try.
+
+**Fix.** The error handler in `src/http/app.ts` now honours a 4xx `status`/`statusCode` carried on the error: it answers with that status and does not log. Everything without one is still `internal_error`, still logged. `src/http/demoImages.integration.test.ts` pins the 404 explicitly, and names in its comment what it is guarding against.
+
+**Lesson.** A middleware option whose name says "do not fall through" says nothing about *how* it stops — Express's convention is that stopping means `next(err)`, so any option like it lands in the error handler. A catch-all error handler that ignores `err.status` silently converts every library's deliberate 4xx into a 500; the handler is the right place to learn the convention once, not each mount.
+
 ## 2026-09-03 — S2.2 provider config: the plan's merge-seam note pointed the wrong way
 
 **Symptom.** The ticket said to look for `createExtractionModelIfConfigured()` in `src/ingestion/extractionModel.ts` and to rebase WS2 on `main` after S1.3 merged, per plan §7. The function was not there, and S1.3 had not merged.

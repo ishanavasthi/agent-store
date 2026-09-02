@@ -1,0 +1,63 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>Kalaakar Streetwear — TAPRI half-zip (mock post)</title>
+<!--
+  The source of the committed screenshot.png (S1.4, plan D14). A mock of the
+  Instagram post the merchant drops into chat in Take A of the video — the
+  caption is the payload, so it is set as live text rather than baked into a
+  bitmap and stays greppable and editable. Re-render with:
+
+      node fixtures/demo-dataset/29-tapri-half-zip/render.mjs
+
+  This is a MOCK, not a real Instagram screenshot: no Instagram wordmark, no
+  real handle, no borrowed chrome. It only has to look like the thing a
+  merchant photographs off their own phone.
+-->
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    width: 420px;
+    font: 14px/1.45 -apple-system, "Segoe UI", system-ui, sans-serif;
+    color: #111;
+    background: #fff;
+  }
+  .status { display: flex; justify-content: space-between; padding: 10px 16px 6px; font-size: 12px; font-weight: 600; letter-spacing: 0.02em; }
+  .head { display: flex; align-items: center; gap: 10px; padding: 8px 14px; border-bottom: 1px solid #efefef; }
+  .avatar { width: 34px; height: 34px; border-radius: 50%; background: linear-gradient(135deg, #f0b429, #d1495b 55%, #6b3fa0); }
+  .who { font-weight: 600; font-size: 13px; }
+  .where { color: #737373; font-size: 11px; }
+  .dots { margin-left: auto; color: #737373; letter-spacing: 2px; }
+  .photo { position: relative; width: 420px; height: 420px; background: linear-gradient(160deg, #3d3d46 0%, #26262c 45%, #17171b 100%); }
+  .photo::after {
+    content: "product photo";
+    position: absolute; inset: auto 0 14px 0; text-align: center;
+    color: rgba(255,255,255,0.22); font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase;
+  }
+  .garment { position: absolute; left: 50%; top: 52%; transform: translate(-50%,-50%); width: 210px; height: 250px; border-radius: 18px 18px 26px 26px; background: linear-gradient(180deg, #8a6f57, #6f573f); box-shadow: 0 24px 60px rgba(0,0,0,0.45); }
+  .zip { position: absolute; left: 50%; top: 8px; width: 3px; height: 96px; background: rgba(255,255,255,0.35); transform: translateX(-50%); }
+  .logo { position: absolute; left: 34px; top: 96px; width: 40px; height: 12px; border-radius: 2px; background: rgba(255,255,255,0.28); }
+  .actions { display: flex; gap: 14px; padding: 10px 14px 4px; font-size: 17px; }
+  .actions .right { margin-left: auto; }
+  .likes { padding: 0 14px 4px; font-weight: 600; font-size: 13px; }
+  .caption { padding: 2px 14px 10px; white-space: pre-wrap; }
+  .caption b { font-weight: 600; }
+  .meta { padding: 0 14px 16px; color: #8e8e8e; font-size: 11px; text-transform: uppercase; letter-spacing: 0.02em; }
+</style>
+<div class="status"><span>9:41</span><span>▮▮▮ ▲ 100%</span></div>
+<div class="head">
+  <div class="avatar"></div>
+  <div>
+    <div class="who">kalaakar.streetwear</div>
+    <div class="where">Mumbai, India</div>
+  </div>
+  <div class="dots">•••</div>
+</div>
+<div class="photo"><div class="garment"><div class="zip"></div><div class="logo"></div></div></div>
+<div class="actions"><span>♡</span><span>💬</span><span>➤</span><span class="right">🔖</span></div>
+<div class="likes">312 likes</div>
+<div class="caption"><b>kalaakar.streetwear</b> TAPRI half-zip 🫖 naya drop, finally aa gaya
+heavy loopback cotton, ribbed cuffs, chest pe embroidered logo
+S M L — teeno size available
+₹1,499/- 🤎 COD bhi chalega
+link in bio, DM for anything ✨</div>
+<div class="meta">2 hours ago</div>

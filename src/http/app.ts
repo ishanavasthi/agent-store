@@ -59,6 +59,9 @@ function escapeHtml(value: string): string {
 /** The merchant's own MCP face, mounted ahead of the `/merchant` router. */
 const MERCHANT_MCP_PATH = '/merchant/mcp';
 
+/** The demo dataset's photos, served by this deployment (S1.4). */
+const DEMO_IMAGES_PATH = '/demo/images';
+
 /**
  * One MCP endpoint, stateless Streamable HTTP: POST speaks the protocol, and
  * GET/DELETE answer 405 because stateless mode has no server→client stream and
@@ -283,6 +286,18 @@ export function createApp(deps: StorefrontDeps): Express {
   app.use('/viewer', express.static(viewerDistDir));
   app.get('/viewer/*splat', serveViewerIndex);
 
+  // ---------------------------------------------------------------------------
+  // Demo photos (S1.4) — the deployment is the only public origin these files
+  // have: the GitHub repository is private, so `fixtures/demo-dataset/images`
+  // has no raw URL a claude.ai connector could fetch for `submit_catalog_item`'s
+  // `imageUrl`. `fallthrough: false` keeps a miss a 404 here instead of letting
+  // it drift down into the viewer SPA fallback.
+  // ---------------------------------------------------------------------------
+  app.use(
+    DEMO_IMAGES_PATH,
+    express.static('fixtures/demo-dataset/images', { fallthrough: false, maxAge: '1h' }),
+  );
+
   // Where Razorpay returns the human's browser after they approve the link.
   // Purely cosmetic: the webhook, not this redirect, is what marks the Order paid.
   app.get('/payment-callback', (req: Request, res: Response) => {
@@ -338,6 +353,7 @@ export function createApp(deps: StorefrontDeps): Express {
         '/audit/:orderId',
         '/audit/refusals/:seq',
         '/viewer',
+        DEMO_IMAGES_PATH,
         '/healthz',
       ],
     });
@@ -346,6 +362,18 @@ export function createApp(deps: StorefrontDeps): Express {
   // Express 5 forwards rejected async handlers here. Details stay server-side:
   // a buyer agent gets a code it can act on, not a stack trace.
   app.use((error: unknown, _req: Request, res: Response, _next: NextFunction) => {
+    // A 4xx carried on the error is a *decided* answer, not a crash: this is
+    // how `express.static({ fallthrough: false })` reports a missing file. Only
+    // the undecided rest is an `internal_error`, and only that is logged.
+    const status = (error as { status?: unknown; statusCode?: unknown } | null)?.status;
+    const statusCode = typeof status === 'number' ? status : (error as { statusCode?: number }).statusCode;
+    if (typeof statusCode === 'number' && statusCode >= 400 && statusCode < 500) {
+      if (!res.headersSent) {
+        res.status(statusCode).json({ error: 'not_found' });
+      }
+      return;
+    }
+
     console.error('[agent-store] unhandled request error', error);
     if (!res.headersSent) {
       res.status(500).json({ error: 'internal_error' });

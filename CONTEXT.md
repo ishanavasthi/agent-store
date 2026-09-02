@@ -51,8 +51,20 @@ The product-level state in which an Agent can see and buy a Product. Lifecycle: 
 **Confirmation**:
 The Merchant's act of approving or correcting extracted fields whose confidence fell below the auto-publish threshold. High-confidence fields publish without it.
 
+**Held**:
+The state of a Product that Ingestion produced but the confidence gate would not publish — `needs-confirmation`, waiting on the Merchant. Each held Product carries its **holds**: the named fields the gate could not accept (`stock` almost always, `price` and `name` occasionally), which are exactly the questions the confirmation screen and the merchant face's `list_held_products` put to the Merchant. Being held is the pipeline working, not failing: the field the caption never stated is the one nobody may guess.
+_Avoid_: pending, blocked, quarantined, rejected
+
 **Auto-publish threshold**:
 The confidence at/above which an extracted field publishes without Confirmation (`AUTO_PUBLISH_THRESHOLD`, currently 0.90 — tuned on the committed accuracy run, because model self-reported confidence is uncalibrated and never read as probability). Stock is stricter than any threshold: a Variant's stock is either a count the caption *states* or null — never defaulted, never a total split by guesswork — and any null-price or null-stock Variant holds the whole Product out of `published`.
+
+**Ingestion pipeline**:
+The one path from a merchant's raw caption (and at most one photo) to catalog rows: Extraction model → the pure assembly rules in `src/ingestion/pipeline.ts` (price parsing, Variant defaulting) → the confidence gate → `published` or Held. There is exactly one — `npm run ingest:demo` over the demo dataset and a Catalog submission from chat differ only in where the caption came from and which id scheme it gets, never in the rules applied to it. Nothing outside it may write an extracted field into the catalog.
+_Avoid_: importer, ETL, ingest job, onboarding flow
+
+**Extraction model**:
+The seam ingestion sees (`ExtractionModel`, `src/ingestion/types.ts`): caption + optional image in, a `ProductExtraction` of `{value, confidence}` fields out. It is the *interface*, not a vendor and not a model id — which provider and model id sit behind it is the Extraction provider's business. It reports the price verbatim as the caption wrote it and never computes money, and it never invents stock. It always runs **server-side**: a client that hands us extracted fields has bypassed the gate, so the connector is given the caption's job, not the model's (ADR-0005). Absent entirely (no key configured), the store still boots and sells — only `submit_catalog_item` refuses.
+_Avoid_: the LLM, extractor service, AI, vision model
 
 **Extraction provider**:
 The HTTP API extraction is pointed at (`openai` | `openrouter`), together with the key, base URL, model, Output mode, vision flag and timeout that go with it — one record read from `EXTRACTION_*`, never a code path a caller chooses. Swapping providers is configuration; the seam above it (`ExtractionModel`) does not move.
@@ -61,6 +73,7 @@ _Avoid_: LLM backend, vendor, gateway
 **Output mode**:
 How a provider is asked to return the extraction payload: `json_schema` (a `response_format` carrying the schema) or `tool_call` (a forced call to a single `record_extraction` function whose parameters *are* the schema). It exists because acceptance is not enforcement — OpenRouter takes a `response_format` it does not apply — so the mode is the best available approximation of strict mode, and our own zod validation, not the mode, is the guarantee.
 _Avoid_: structured output setting, response format, strict mode
+
 **Low stock**:
 A *published* Variant whose stock is at or below `LOW_STOCK_THRESHOLD` (2) and above zero — the merchant-facing "restock this soon". Deliberately disjoint from **sold out** (a published Variant at exactly zero stock, unbuyable right now): the two are different instructions to the merchant, and `store_summary` reports them as two lists.
 _Avoid_: out of stock (that is the buyer-side refusal case), running low, backorder
@@ -130,7 +143,7 @@ Always integer paise, INR only (`49900`, never `499.00`). No floating point anyw
 ### Failure vocabulary
 
 **Refusal**:
-The trust layer saying no, on policy, *before* money moves (over-cap, over-budget, replay, tampered cart, unregistered agent). Always carries a structured `{code, reason, recoverable}` payload. The rule-auditor's guarantees are about Refusals.
+The trust layer saying no, on policy, *before* money moves (over-cap, over-budget, replay, tampered cart, unregistered agent). Always carries a structured `{code, reason, recoverable}` payload. The rule-auditor's guarantees are about Refusals. The Merchant face *borrows the shape* for one case — an unrecognised Merchant token answers `UNKNOWN_MERCHANT_TOKEN` as a Refusal payload — so a connector meets one identity-failure shape on either face; it is a borrowed shape, not a money-path Refusal, which is why it writes no audit event and the rule-auditor never sees it.
 _Avoid_: rejection, denial, error (for policy no-s)
 
 **Decline**:

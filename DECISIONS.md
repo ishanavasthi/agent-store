@@ -363,3 +363,15 @@ Why: recorded here because the plan decided *that* it is a script; the reason is
 Rejected: an `archive_product` MCP tool (an LLM-triggered destructive catalog operation); a hard DELETE (breaks audit references).
 Revisit when: never for this release.
 Tier: Plan-forced (plan D3).
+
+## 2026-09-03: The app's error handler honours a 4xx carried on the error, instead of the static mount getting its own 404 route (S1.4)
+Why: `express.static({ fallthrough: false })` reports a miss by calling `next(err)` with `status: 404`, and this app's catch-all error handler answered every error `500 internal_error` — so a missing demo photo read as a crashed server and logged like one. The handler is the one place that decides what an error means, and the "a 4xx on the error is a decided answer, not a crash" rule is true for every mount, present and future, not just this one; the alternative fixes the symptom once per mount.
+Rejected: a dedicated `/demo/images` 404 handler mounted after the static (correct here, silently wrong at the next library that uses the same Express convention); `fallthrough: true` plus an explicit 404 route (a miss would first fall through to the viewer SPA fallback, answering `index.html` for a missing JPEG).
+Revisit when: some middleware needs a 4xx of its own to be logged — then the rule needs a carve-out rather than a rewrite.
+Tier: Agent decision (verified: reverting the handler change turns the 404 test 500).
+
+## 2026-09-03: The 29th caption is a TAPRI half-zip at ₹1,499 in S/M/L with no stock stated, kept outside `dataset.json` (S1.4, plan D14) (for veto)
+Why: the plan fixed the constraints (a price, no stock, the dataset's voice, unscored); the product, the wording and the location are this ticket's. Sizes S/M/L make the on-camera confirmation answer a short spoken sentence ("S 4, M 6, L 5"). Every stray number a dataset caption would normally carry as a trap — GSM, "drop 3 of 3", pack sizes — is deliberately absent, because a model that reads one as stock publishes the Product and the demo loses its beat. It lives in `fixtures/demo-dataset/29-tapri-half-zip/`, not in `dataset.json`: no ground-truth label exists for it, and an unlabelled 29th item would either break `ingest:accuracy` or quietly move the committed accuracy numbers the repo cites.
+Rejected: adding it to `dataset.json` with a hand-written label (moves the reportable accuracy numbers for a prop); reusing one of the 28 captions and stripping its stock (collides with the seeded catalog live on camera); a real Instagram screenshot (borrowed chrome and a real handle in a submitted video).
+Revisit when: the owner vetoes the wording — `caption.txt` and the `.caption` block of `screenshot.html` are edited together, then `render.mjs` re-run.
+Tier: Owner veto pending (plan D14 reserves the wording).
