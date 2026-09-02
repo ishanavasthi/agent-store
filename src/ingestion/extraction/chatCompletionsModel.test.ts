@@ -92,7 +92,7 @@ describe('the request the adapter sends', () => {
     expect(calls[0]!.url).toBe('https://openrouter.ai/api/v1/chat/completions');
     const body = JSON.parse(calls[0]!.init.body as string) as Record<string, unknown>;
     expect(body['model']).toBe('z-ai/glm-5.3-flash');
-    expect(body['max_tokens']).toBe(4000);
+    expect(body['max_tokens']).toBe(12_000);
     // `reasoning` is a Responses-API parameter; a generic gateway 400s on it.
     expect(body).not.toHaveProperty('reasoning');
     expect(body['messages']).toEqual([
@@ -239,7 +239,7 @@ describe('the envelope the adapter reads', () => {
         config: config({ EXTRACTION_OUTPUT_MODE: 'json_schema' }),
         fetchImpl,
       }).extract(CAPTION_ONLY),
-    ).rejects.toThrow(/stopped at the 4000-token limit/);
+    ).rejects.toThrow(/stopped at the 12000-token limit/);
   });
 
   it('rejects a drifted payload the provider never enforced', async () => {

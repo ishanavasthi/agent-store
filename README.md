@@ -269,7 +269,9 @@ The rest of the commands, each producing an artifact you can look at:
 
 ```bash
 npm run ingest:demo       # the 28-caption demo dataset through the ingestion pipeline
-npm run ingest:accuracy   # extraction accuracy vs the published hand labels (needs OPENAI_API_KEY)
+npm run ingest:accuracy   # extraction accuracy vs the published hand labels (needs an extraction key)
+npm run ingest:smoke -- --items=3   # 3 captions through the configured provider, no database
+npm run ingest:compare    # one table over every committed run in fixtures/demo-dataset/runs/
 npm run catalog:archive -- prd_…   # take a mis-submitted Product back off the catalog (status → draft)
 npm run failure:decline   # rehearsed failure 1: decline, one bounded retry, fail closed
 npm run failure:oversell  # rehearsed failure 2: oversell at fulfilment, automatic refund
@@ -302,7 +304,7 @@ harness rather than mocked here — see `PLAN.md` §6 and the Scoreboard above.
 | `EXTRACTION_BASE_URL` | no | Override the provider's API root, no trailing slash. Defaults to `https://api.openai.com/v1` / `https://openrouter.ai/api/v1`. |
 | `EXTRACTION_OUTPUT_MODE` | no | `json_schema` (a `response_format`) or `tool_call` (a forced `record_extraction` function call whose parameters are the schema). Defaults to `json_schema` for `openai`, `tool_call` for `openrouter` — which accepts `response_format` without enforcing it. Every payload is validated here with zod either way. |
 | `EXTRACTION_VISION` | no | `false` for a text-only model. Defaults to true. An image submitted while this is false is a loud error, never a silently caption-only extraction. |
-| `EXTRACTION_TIMEOUT_MS` | no | Per-request abort timeout, default `60000`. Three attempts are made on 429/5xx, honouring a small `Retry-After`. |
+| `EXTRACTION_TIMEOUT_MS` | no | Per-request abort timeout, default `60000`. Three attempts are made on 429/5xx, honouring a small `Retry-After`. OpenRouter's `json_schema` mode is materially slower than `tool_call` and wants `120000`; see the engineering log. |
 | `OPENROUTER_API_KEY` | no | Fallback key when the provider is `openrouter`. |
 | `OPENROUTER_SITE_URL` | no | Sent to OpenRouter as `HTTP-Referer` (attribution only). |
 | `OPENROUTER_APP_NAME` | no | Sent to OpenRouter as `X-Title` (attribution only). |

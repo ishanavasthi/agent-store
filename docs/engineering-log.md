@@ -8,6 +8,179 @@ Each entry is **Symptom → Cause → Fix → Lesson**. The Cause is the mechani
 
 ---
 
+## 2026-09-03 — S2.3 live runs: MiniMax-M3 ignores both output modes, and `.env` is not a shell script
+
+### MiniMax-M3 returns a shape neither `response_format` nor a forced tool call constrains
+
+**Symptom** — `npm run ingest:smoke -- --items=3` against
+`minimax/minimax-m3:free` failed on the *first* item in both output modes, and
+reproducibly:
+
+- `EXTRACTION_OUTPUT_MODE=json_schema` → ``Could not parse extraction payload
+  as JSON: ```json `` — the model wrapped the object in a markdown fence, which
+  is the one thing `response_format: {type: 'json_schema'}` is supposed to make
+  impossible.
+- `EXTRACTION_OUTPUT_MODE=tool_call` → ``did not match the schema at
+  `variantLabels`: Invalid input: expected object, received array``. The
+  payload was well-formed JSON and *flattened* the per-field envelope:
+  `"variantLabels": ["S","M",…]` instead of `{"value": [...], "confidence": n}`,
+  while `name`, `description`, `priceText` and `stock` kept the envelope.
+
+**Cause** — OpenRouter accepts `response_format` and `strict: true` on a forced
+tool call and forwards them, but does not *enforce* either; enforcement is the
+upstream provider's, and MiniMax-M3 does neither. So both knobs are a request,
+not a constraint, and a model that half-follows the schema produces a payload
+that is syntactically fine and semantically wrong — the worst failure shape,
+because nothing but validation distinguishes it from a good one. GLM-5.3-Flash
+on the same account, same adapter, same request bytes honoured both.
+
+**Fix** — none, by design. Coercing a flattened field back into the envelope
+would be the adapter inventing a confidence the model never reported, in the
+exact fields the confidence gate reads; MiniMax was dropped under the plan §6
+de-scope ladder (rung 3, "MiniMax runs — keep GLM only") and the smoke output
+above is its record. The four planned records became two, both GLM.
+
+**Lesson** — a per-field `{value, confidence}` envelope is not just a data
+shape, it is the thing that made this failure *loud*: a bare
+`variantLabels: string[]` schema would have parsed this payload cleanly and put
+an unconfirmed size list into the catalog. Validate the envelope, and smoke a
+new provider for 3 items before spending 28 — this cost 4 requests to learn.
+
+### A 4000-token cap tuned on one provider killed a 28-item run on its 23rd live call
+
+**Symptom** — the GLM `json_schema` full run failed at item 23 of 28 with
+``The model stopped at the 4000-token limit before finishing the payload``
+(`finish_reason: 'length'`), after 22 successful live calls. The same model in
+`tool_call` mode completed all 28.
+
+**Cause** — `MAX_TOKENS = 4000` in `extraction/chatCompletionsModel.ts`, added
+in S2.2 as a round number. The extraction payload is ~400 tokens, so the cap
+looked like 10x headroom; what actually consumes the budget is the model's own
+preamble before the constrained object, which differs per model and per output
+mode and is not something the request controls. `providerHttp`'s retries do not
+help and should not — a truncated answer is a deterministic outcome of the
+request, not a transient server fault.
+
+**Fix** — the cap is now `12_000`, with the reasoning written next to it: it
+exists to stop a runaway, not to size the answer, so it belongs well clear of
+any payload this schema can produce rather than snug against the expected one.
+The two `chatCompletionsModel.test.ts` assertions that named 4000 now name the
+new value, so the constant is still pinned rather than free to drift. **This
+did not rescue the run** — see the next entry; it converted a truncation into a
+timeout on the same item, which is how the real cause got found.
+
+**Lesson** — an output cap sized against the *expected* answer is a landmine
+under a batch job: it fires late, after the run has spent real money, and only
+on the inputs that provoke the longest preamble. Size it against the runaway
+you are guarding, not the answer you are expecting — and put the number in the
+test, so raising it is a decision rather than a diff nobody reads.
+
+### GLM-5.3-Flash in `json_schema` mode does not terminate on one dataset item, three attempts running
+
+**Symptom** — the GLM `json_schema` 28-item run failed at item 23 of 28,
+`23-machli-mesh-shorts`, three times, having spent 22 live calls each time:
+
+| attempt | `max_tokens` | `EXTRACTION_TIMEOUT_MS` | outcome at item 23 |
+|---|---|---|---|
+| 1 | 4 000 | 120 000 | `finish_reason: 'length'` |
+| 2 | 12 000 | 120 000 | request aborted on timeout |
+| 3 | 12 000 | 300 000 | request aborted on timeout |
+
+Items 1–22 succeeded every time, in roughly 22 s each. The same model, same
+adapter, same request bytes in `tool_call` mode completes all 28 in 239 s.
+
+**Cause** — not the cap and not the clock: raising each in turn only moved
+where the same non-termination surfaced. `23-machli-mesh-shorts` is the
+dataset's "full per-variant split, no stated total" trap (`{S: 4, M: 7, L: 2}`),
+and it is also the item GLM got *wrong* in `tool_call` mode by summing the split
+to 13. Under `json_schema` constrained decoding the model appears to grind on
+the same reconciliation without ever emitting a terminating object. Whatever the
+internal mechanism, the observable is stable: this model, this mode, this item,
+no completion inside five minutes.
+
+**Fix** — none. GLM `json_schema` produced no committed run record, and this is
+the entry that says why instead of a number that says nothing. `tool_call` is
+the only OpenRouter configuration that completed a run.
+
+**Lesson** — when raising a limit moves a failure instead of removing it, stop
+raising limits: the second attempt is diagnosis, the third is stubbornness.
+Two independent caps failing at the same input is the input talking, not the
+caps. And a hard input is worth keeping in a dataset precisely because it
+separates models this loudly — item 23 disqualified one mode and hung the other.
+
+### GLM-5.3-Flash sums a per-variant stock split into product stock, confidently, and the gate publishes it
+
+**Symptom** — the full 28-item `tool_call` run met the 70% floor on every
+reportable field (name 93%, price 100%, stock 96%, variant labels 100%,
+description 100%) and still reported `published items carrying a wrong field:
+1`. The item was `23-machli-mesh-shorts`: `variantStock` extracted perfectly as
+`{S: 4, M: 7, L: 2}`, and `stock` came back as **13** at confidence 0.90 where
+the hand label says `null`.
+
+**Cause** — 4 + 7 + 2 = 13. The caption states a per-variant split and no
+total, and the dataset's labelling rule is explicit that per-variant counts are
+never summed into product stock because a total the caption never states is an
+inference, not a label. GLM did the arithmetic and reported the result as an
+extracted fact, at a confidence high enough to clear `AUTO_PUBLISH_THRESHOLD`
+(0.90) — so with every *other* field on that item correct and confident, the
+Product auto-published carrying an invented number in the one column checkout
+trusts. gpt-5-mini returns `null` here; this is a model behaviour difference,
+not a pipeline bug.
+
+**Fix** — none in code, and deliberately: the run record is evidence, and the
+number that must be zero was 1. `tool_call` is disqualified as the demo mode by
+the ticket's own first rule (`publishedWithWrongField === []` outranks
+accuracy), and the choice moved to GLM's `json_schema` run.
+
+**Lesson** — a per-field accuracy table can look excellent while the gate has
+already failed, because accuracy averages over 28 items and the gate is a
+worst-case property of each one. `publishedWithWrongField` is the number to
+read first; the percentages are the tiebreak. Also: the traps that catch a
+model are the arithmetic ones — a model that can add is a model that will
+invent a total, and self-reported confidence does not distinguish a read value
+from a computed one.
+
+### `json_schema` mode is ~2.5x slower than `tool_call` and blows the 60 s default timeout
+
+**Symptom** — the same GLM smoke that took 28 s for 3 items in `tool_call` mode
+died in `json_schema` mode with `DOMException [TimeoutError]: The operation was
+aborted due to timeout` on item 2; re-run with `EXTRACTION_TIMEOUT_MS=120000`
+it completed 3 items in 67 s.
+
+**Cause** — `EXTRACTION_TIMEOUT_MS` defaults to 60 000 (S2.2, tuned against
+OpenAI Responses), and OpenRouter's `json_schema` path adds a constrained
+decoding pass upstream: ~22 s/item versus ~9 s/item for the forced tool call,
+with per-item variance that crosses 60 s on the longer captions. The retry
+policy does not help — a timeout is an `AbortError`, not a 429 or a 5xx, so
+`providerHttp` correctly does not retry it.
+
+**Fix** — the live runs were made with `EXTRACTION_TIMEOUT_MS=120000`; the
+figure is recorded in `fixtures/demo-dataset/README.md` next to the runs it
+produced, and the Railway block in the PR keeps `tool_call` as the deployed
+mode, where 60 s is comfortable.
+
+**Lesson** — a timeout tuned on one provider is a property of that provider,
+not of the operation. When a knob's default came from measuring one vendor, the
+next vendor's first failure will be that knob.
+
+### Sourcing `.env` from zsh is a parse error waiting for the first `&`
+
+**Symptom** — `set -a; . ./.env; set +a` printed ``./.env:19: parse error near
+`&` `` and then *appeared* to work, because the variable the next command
+needed happened to survive.
+
+**Cause** — `.env` is a key=value file, not a shell script. Line 19 is a
+`DATABASE_URL` whose Neon query string contains an unquoted `&`, which zsh
+reads as backgrounding. Everything after the failing line is loaded or not
+depending on how the shell recovers — silently, and differently per shell.
+
+**Fix** — the run commands export exactly the variable they need
+(`export OPENROUTER_API_KEY="$(grep '^OPENROUTER_API_KEY=' .env | cut -d= -f2-)"`)
+rather than sourcing the file.
+
+**Lesson** — never `source .env` in a script whose result you will trust. A
+partial environment fails later and somewhere else, which is the expensive kind.
+
 ## 2026-09-03 — S1.4 demo images: `express.static({ fallthrough: false })` turns a missing file into a 500
 
 **Symptom.** With the plan's exact mount — `app.use('/demo/images', express.static('fixtures/demo-dataset/images', { fallthrough: false, maxAge: '1h' }))` — a request for a photo that exists is fine, but `GET /demo/images/no-such-drop.jpg` answers **500 `{"error":"internal_error"}`** and logs `unhandled request error` as though the server had crashed.

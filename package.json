@@ -28,6 +28,8 @@
     "ingest:accuracy": "npm run build:server && node dist/ingestion/runAccuracy.js",
     "ingest:demo": "npm run build:server && node dist/ingestion/runIngestDemo.js",
     "catalog:archive": "npm run build:server && node dist/ingestion/runArchiveProduct.js",
+    "ingest:smoke": "npm run build:server && node dist/ingestion/runExtractionSmoke.js",
+    "ingest:compare": "npm run build:server && node dist/ingestion/runCompare.js",
     "evals:live": "npm run build:server && node dist/evals/live/cli.js",
     "evals:probe": "npm run build:server && node dist/evals/live/probe.js",
     "failure:decline": "npm run build:server && node dist/failures/declineRehearsal.js",

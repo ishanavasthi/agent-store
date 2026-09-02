@@ -86,6 +86,10 @@ _Avoid_: upload, import, listing request
 A Product put back to `draft` after publication, so buyers no longer see it while the row, its extraction record and any Order referencing it stay intact. The repair for a mis-submitted Product (`npm run catalog:archive`), and deliberately not something a chat tool can do.
 _Avoid_: delete, remove, unpublish
 
+**Run record**:
+One committed JSON file under `fixtures/demo-dataset/runs/` holding everything a single 28-item accuracy run produced: the Extraction provider, model and Output mode it ran under, per-field accuracy against the published hand labels, what the gate published versus held, the threshold sweep, and every raw model payload. It is *evidence*, not a report — every accuracy number this repo claims is read off one, and a record is never hand-edited or regenerated to look better. Named `<model>.json` for `openai` (the record CI pins) and `<provider>-<model>-<outputMode>.json` otherwise, because one model in two Output modes is two measurements.
+_Avoid_: benchmark, eval result, score file
+
 ### Purchase flow
 
 **Intent mandate**:

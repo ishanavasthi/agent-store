@@ -1,0 +1,1856 @@
+{
+  "model": "z-ai/glm-5.3-flash",
+  "provider": "openrouter",
+  "outputMode": "tool_call",
+  "ranAt": "2026-09-02T22:43:45.807Z",
+  "elapsedSeconds": 239,
+  "accuracyFloor": 0.7,
+  "allFloorsMet": true,
+  "autoPublishThreshold": 0.9,
+  "dataset": {
+    "merchant": "Kalaakar Streetwear",
+    "items": 28
+  },
+  "summary": {
+    "items": 28,
+    "perField": [
+      {
+        "field": "name",
+        "matches": 26,
+        "items": 28,
+        "accuracy": 0.9285714285714286
+      },
+      {
+        "field": "price",
+        "matches": 28,
+        "items": 28,
+        "accuracy": 1
+      },
+      {
+        "field": "stock",
+        "matches": 27,
+        "items": 28,
+        "accuracy": 0.9642857142857143
+      },
+      {
+        "field": "variantLabels",
+        "matches": 28,
+        "items": 28,
+        "accuracy": 1
+      },
+      {
+        "field": "descriptionPresence",
+        "matches": 28,
+        "items": 28,
+        "accuracy": 1
+      }
+    ],
+    "variantStock": {
+      "field": "variantStock",
+      "matches": 28,
+      "items": 28,
+      "accuracy": 1
+    }
+  },
+  "lifecycle": {
+    "published": 2,
+    "needsConfirmation": 26,
+    "publishedIds": [
+      "06-nazar-snapback-cap",
+      "23-machli-mesh-shorts"
+    ],
+    "publishedWithWrongField": [
+      {
+        "id": "23-machli-mesh-shorts",
+        "wrongFields": [
+          "stock"
+        ]
+      }
+    ]
+  },
+  "wrongFields": [
+    {
+      "id": "19-crossbody-sling-bag",
+      "field": "name",
+      "correct": false,
+      "confidence": 0.8
+    },
+    {
+      "id": "23-machli-mesh-shorts",
+      "field": "stock",
+      "correct": false,
+      "confidence": 0.9
+    },
+    {
+      "id": "28-chandni-glow-tee",
+      "field": "name",
+      "correct": false,
+      "confidence": 0.85
+    }
+  ],
+  "sweep": [
+    {
+      "threshold": 0.5,
+      "wrongAtOrAbove": 3,
+      "correctAtOrAbove": 146
+    },
+    {
+      "threshold": 0.55,
+      "wrongAtOrAbove": 3,
+      "correctAtOrAbove": 146
+    },
+    {
+      "threshold": 0.6,
+      "wrongAtOrAbove": 3,
+      "correctAtOrAbove": 146
+    },
+    {
+      "threshold": 0.65,
+      "wrongAtOrAbove": 3,
+      "correctAtOrAbove": 146
+    },
+    {
+      "threshold": 0.7,
+      "wrongAtOrAbove": 3,
+      "correctAtOrAbove": 146
+    },
+    {
+      "threshold": 0.75,
+      "wrongAtOrAbove": 3,
+      "correctAtOrAbove": 145
+    },
+    {
+      "threshold": 0.8,
+      "wrongAtOrAbove": 3,
+      "correctAtOrAbove": 145
+    },
+    {
+      "threshold": 0.85,
+      "wrongAtOrAbove": 2,
+      "correctAtOrAbove": 144
+    },
+    {
+      "threshold": 0.9,
+      "wrongAtOrAbove": 1,
+      "correctAtOrAbove": 139
+    },
+    {
+      "threshold": 0.95,
+      "wrongAtOrAbove": 0,
+      "correctAtOrAbove": 105
+    },
+    {
+      "threshold": 0.99,
+      "wrongAtOrAbove": 0,
+      "correctAtOrAbove": 4
+    }
+  ],
+  "records": [
+    {
+      "id": "01-raat-oversized-tee",
+      "servedByModelId": "z-ai/glm-5.3-flash",
+      "score": {
+        "id": "01-raat-oversized-tee",
+        "name": {
+          "expected": "RAAT Oversized Tee",
+          "actual": "RAAT Oversized Tee",
+          "match": true,
+          "confidence": 0.85
+        },
+        "price": {
+          "expected": 119900,
+          "actual": 119900,
+          "match": true,
+          "confidence": 0.98
+        },
+        "priceText": "₹1,199/-",
+        "stock": {
+          "expected": null,
+          "actual": null,
+          "match": true,
+          "confidence": 0
+        },
+        "variantLabels": {
+          "expected": [
+            "S",
+            "M",
+            "L",
+            "XL",
+            "XXL"
+          ],
+          "actual": [
+            "S",
+            "M",
+            "L",
+            "XL",
+            "XXL"
+          ],
+          "match": true,
+          "confidence": 0.95
+        },
+        "descriptionPresence": {
+          "expected": true,
+          "actual": true,
+          "match": true,
+          "confidence": 0.95
+        },
+        "variantStock": {
+          "expected": {},
+          "actual": {},
+          "match": true,
+          "confidence": 0.95
+        }
+      },
+      "holds": [
+        {
+          "field": "name",
+          "reason": "product name extracted at confidence 0.85, below the 0.90 threshold"
+        },
+        {
+          "field": "stock",
+          "reason": "no stock stated for variants S, M, L, XL, XXL"
+        }
+      ],
+      "status": "needs_confirmation",
+      "raw": "{\"description\":{\"confidence\": 0.95, \"value\": \"Oversized tee in 240 gsm french terry, jet black with puff print.\"},\"name\":{\"confidence\": 0.85, \"value\": \"RAAT Oversized Tee\"},\"priceText\":{\"confidence\": 0.98, \"value\": \"₹1,199/-\"},\"stock\":{\"confidence\": 0, \"value\": null},\"variantLabels\":{\"confidence\": 0.95, \"value\": [\"S\", \"M\", \"L\", \"XL\", \"XXL\"]},\"variantStock\":{\"confidence\": 0.95, \"value\": []}}"
+    },
+    {
+      "id": "02-bombay-95-graphic-tee",
+      "servedByModelId": "z-ai/glm-5.3-flash",
+      "score": {
+        "id": "02-bombay-95-graphic-tee",
+        "name": {
+          "expected": "Bombay 95 Graphic Tee",
+          "actual": "Bombay 95 Graphic Tee",
+          "match": true,
+          "confidence": 0.98
+        },
+        "price": {
+          "expected": 89900,
+          "actual": 89900,
+          "match": true,
+          "confidence": 0.97
+        },
+        "priceText": "Rs. 899",
+        "stock": {
+          "expected": 18,
+          "actual": 18,
+          "match": true,
+          "confidence": 0.95
+        },
+        "variantLabels": {
+          "expected": [
+            "M",
+            "L",
+            "XL"
+          ],
+          "actual": [
+            "M",
+            "L",
+            "XL"
+          ],
+          "match": true,
+          "confidence": 0.98
+        },
+        "descriptionPresence": {
+          "expected": true,
+          "actual": true,
+          "match": true,
+          "confidence": 0.95
+        },
+        "variantStock": {
+          "expected": {},
+          "actual": {},
+          "match": true,
+          "confidence": 0.95
+        }
+      },
+      "holds": [
+        {
+          "field": "stock",
+          "reason": "the caption states a total of 18 across variants but no per-variant split — splitting it would be invention, the merchant has to"
+        }
+      ],
+      "status": "needs_confirmation",
+      "raw": "{\"description\": {\"confidence\": 0.95, \"value\": \"100% combed cotton, screen print, regular fit\"}, \"name\": {\"confidence\": 0.98, \"value\": \"Bombay 95 Graphic Tee\"}, \"priceText\": {\"confidence\": 0.97, \"value\": \"Rs. 899\"}, \"stock\": {\"confidence\": 0.95, \"value\": 18}, \"variantLabels\": {\"confidence\": 0.98, \"value\": [\"M\", \"L\", \"XL\"]}, \"variantStock\": {\"confidence\": 0.95, \"value\": []}}"
+    },
+    {
+      "id": "03-aandhi-windcheater",
+      "servedByModelId": "z-ai/glm-5.3-flash",
+      "score": {
+        "id": "03-aandhi-windcheater",
+        "name": {
+          "expected": "AANDHI Windcheater",
+          "actual": "AANDHI Windcheater",
+          "match": true,
+          "confidence": 0.95
+        },
+        "price": {
+          "expected": 179900,
+          "actual": 179900,
+          "match": true,
+          "confidence": 0.9
+        },
+        "priceText": "1,799/-",
+        "stock": {
+          "expected": null,
+          "actual": null,
+          "match": true,
+          "confidence": 0
+        },
+        "variantLabels": {
+          "expected": [
+            "M",
+            "L",
+            "XL"
+          ],
+          "actual": [
+            "M",
+            "L",
+            "XL"
+          ],
+          "match": true,
+          "confidence": 0.95
+        },
+        "descriptionPresence": {
+          "expected": true,
+          "actual": true,
+          "match": true,
+          "confidence": 0.9
+        },
+        "variantStock": {
+          "expected": {},
+          "actual": {},
+          "match": true,
+          "confidence": 1
+        }
+      },
+      "holds": [
+        {
+          "field": "stock",
+          "reason": "no stock stated for variants M, L, XL"
+        }
+      ],
+      "status": "needs_confirmation",
+      "raw": "{\"description\":{\"confidence\": 0.9, \"value\": \"Water-repellent nylon windcheater with packable hood and reflective zip.\"},\"name\":{\"confidence\": 0.95, \"value\": \"AANDHI Windcheater\"},\"priceText\":{\"confidence\": 0.9, \"value\": \"1,799/-\"},\"stock\":{\"confidence\": 0, \"value\": null},\"variantLabels\":{\"confidence\": 0.95, \"value\": [\"M\", \"L\", \"XL\"]},\"variantStock\":{\"confidence\": 1, \"value\": []}}"
+    },
+    {
+      "id": "04-galli-cargo-pants",
+      "servedByModelId": "z-ai/glm-5.3-flash",
+      "score": {
+        "id": "04-galli-cargo-pants",
+        "name": {
+          "expected": "GALLI Cargo Pants",
+          "actual": "GALLI Cargo Pants",
+          "match": true,
+          "confidence": 0.95
+        },
+        "price": {
+          "expected": 189900,
+          "actual": 189900,
+          "match": true,
+          "confidence": 0.95
+        },
+        "priceText": "Rs 1,899",
+        "stock": {
+          "expected": null,
+          "actual": null,
+          "match": true,
+          "confidence": 0
+        },
+        "variantLabels": {
+          "expected": [
+            "28",
+            "30",
+            "32",
+            "34",
+            "36"
+          ],
+          "actual": [
+            "28",
+            "30",
+            "32",
+            "34",
+            "36"
+          ],
+          "match": true,
+          "confidence": 0.98
+        },
+        "descriptionPresence": {
+          "expected": true,
+          "actual": true,
+          "match": true,
+          "confidence": 0.9
+        },
+        "variantStock": {
+          "expected": {
+            "32": 3
+          },
+          "actual": {
+            "32": 3
+          },
+          "match": true,
+          "confidence": 0.95
+        }
+      },
+      "holds": [
+        {
+          "field": "stock",
+          "reason": "no stock stated for variants 28, 30, 34, 36"
+        }
+      ],
+      "status": "needs_confirmation",
+      "raw": "{\"name\": {\"value\": \"GALLI Cargo Pants\", \"confidence\": 0.95}, \"description\": {\"value\": \"Ripstop cargo pants with 8 pockets and adjustable ankle cuffs.\", \"confidence\": 0.9}, \"priceText\": {\"value\": \"Rs 1,899\", \"confidence\": 0.95}, \"stock\": {\"value\": null, \"confidence\": 0}, \"variantLabels\": {\"value\": [\"28\", \"30\", \"32\", \"34\", \"36\"], \"confidence\": 0.98}, \"variantStock\": {\"value\": [{\"label\": \"32\", \"count\": 3}], \"confidence\": 0.95}}"
+    },
+    {
+      "id": "05-safed-classic-tee",
+      "servedByModelId": "z-ai/glm-5.3-flash",
+      "score": {
+        "id": "05-safed-classic-tee",
+        "name": {
+          "expected": "SAFED Classic Tee",
+          "actual": "SAFED Classic Tee",
+          "match": true,
+          "confidence": 0.95
+        },
+        "price": {
+          "expected": 69900,
+          "actual": 69900,
+          "match": true,
+          "confidence": 0.9
+        },
+        "priceText": "₹699",
+        "stock": {
+          "expected": null,
+          "actual": null,
+          "match": true,
+          "confidence": 0
+        },
+        "variantLabels": {
+          "expected": [
+            "S",
+            "M",
+            "L",
+            "XL"
+          ],
+          "actual": [
+            "S",
+            "M",
+            "L",
+            "XL"
+          ],
+          "match": true,
+          "confidence": 0.95
+        },
+        "descriptionPresence": {
+          "expected": true,
+          "actual": true,
+          "match": true,
+          "confidence": 0.9
+        },
+        "variantStock": {
+          "expected": {},
+          "actual": {},
+          "match": true,
+          "confidence": 0.95
+        }
+      },
+      "holds": [
+        {
+          "field": "stock",
+          "reason": "no stock stated for variants S, M, L, XL"
+        }
+      ],
+      "status": "needs_confirmation",
+      "raw": "{\"description\":{\"value\": \"Classic white tee in 220 gsm fabric with no print or logo.\", \"confidence\": 0.9},\"name\":{\"value\": \"SAFED Classic Tee\", \"confidence\": 0.95},\"priceText\":{\"value\": \"₹699\", \"confidence\": 0.9},\"stock\":{\"value\": null, \"confidence\": 0},\"variantLabels\":{\"value\": [\"S\", \"M\", \"L\", \"XL\"], \"confidence\": 0.95},\"variantStock\":{\"value\": [], \"confidence\": 0.95}}"
+    },
+    {
+      "id": "06-nazar-snapback-cap",
+      "servedByModelId": "z-ai/glm-5.3-flash",
+      "score": {
+        "id": "06-nazar-snapback-cap",
+        "name": {
+          "expected": "NAZAR Snapback Cap",
+          "actual": "NAZAR Snapback Cap",
+          "match": true,
+          "confidence": 0.97
+        },
+        "price": {
+          "expected": 54900,
+          "actual": 54900,
+          "match": true,
+          "confidence": 0.98
+        },
+        "priceText": "₹549/-",
+        "stock": {
+          "expected": 25,
+          "actual": 25,
+          "match": true,
+          "confidence": 0.95
+        },
+        "variantLabels": {
+          "expected": [],
+          "actual": [],
+          "match": true,
+          "confidence": 0.95
+        },
+        "descriptionPresence": {
+          "expected": true,
+          "actual": true,
+          "match": true,
+          "confidence": 0.95
+        },
+        "variantStock": {
+          "expected": {},
+          "actual": {},
+          "match": true,
+          "confidence": 0.95
+        }
+      },
+      "holds": [],
+      "status": "published",
+      "raw": "{\"description\":{\"confidence\": 0.95, \"value\": \"Black twill snapback with embroidered evil-eye motif, flat brim, adjustable strap — free size.\"},\"name\":{\"confidence\": 0.97, \"value\": \"NAZAR Snapback Cap\"},\"priceText\":{\"confidence\": 0.98, \"value\": \"₹549/-\"},\"stock\":{\"confidence\": 0.95, \"value\": 25},\"variantLabels\":{\"confidence\": 0.95, \"value\": []},\"variantStock\":{\"confidence\": 0.95, \"value\": []}}"
+    },
+    {
+      "id": "07-udaan-hoodie",
+      "servedByModelId": "z-ai/glm-5.3-flash",
+      "score": {
+        "id": "07-udaan-hoodie",
+        "name": {
+          "expected": "UDAAN Hoodie",
+          "actual": "UDAAN Hoodie",
+          "match": true,
+          "confidence": 0.95
+        },
+        "price": {
+          "expected": 219900,
+          "actual": 219900,
+          "match": true,
+          "confidence": 0.95
+        },
+        "priceText": "₹2,199/-",
+        "stock": {
+          "expected": 9,
+          "actual": 9,
+          "match": true,
+          "confidence": 0.7
+        },
+        "variantLabels": {
+          "expected": [
+            "M",
+            "L",
+            "XL",
+            "XXL"
+          ],
+          "actual": [
+            "M",
+            "L",
+            "XL",
+            "XXL"
+          ],
+          "match": true,
+          "confidence": 0.95
+        },
+        "descriptionPresence": {
+          "expected": true,
+          "actual": true,
+          "match": true,
+          "confidence": 0.95
+        },
+        "variantStock": {
+          "expected": {},
+          "actual": {},
+          "match": true,
+          "confidence": 0.95
+        }
+      },
+      "holds": [
+        {
+          "field": "stock",
+          "reason": "stock 9 extracted at confidence 0.70, below the 0.90 threshold"
+        },
+        {
+          "field": "stock",
+          "reason": "the caption states a total of 9 across variants but no per-variant split — splitting it would be invention, the merchant has to"
+        }
+      ],
+      "status": "needs_confirmation",
+      "raw": "{\"description\":{\"confidence\": 0.95, \"value\": \"400 gsm hoodie with brushed fleece inside and embroidered chest logo.\"},\"name\":{\"confidence\": 0.95, \"value\": \"UDAAN Hoodie\"},\"priceText\":{\"confidence\": 0.95, \"value\": \"₹2,199/-\"},\"stock\":{\"confidence\": 0.7, \"value\": 9},\"variantLabels\":{\"confidence\": 0.95, \"value\": [\"M\", \"L\", \"XL\", \"XXL\"]},\"variantStock\":{\"confidence\": 0.95, \"value\": []}}"
+    },
+    {
+      "id": "08-kohra-acid-wash-hoodie",
+      "servedByModelId": "z-ai/glm-5.3-flash",
+      "score": {
+        "id": "08-kohra-acid-wash-hoodie",
+        "name": {
+          "expected": "KOHRA Acid Wash Hoodie",
+          "actual": "KOHRA Acid Wash Hoodie",
+          "match": true,
+          "confidence": 0.95
+        },
+        "price": {
+          "expected": 239900,
+          "actual": 239900,
+          "match": true,
+          "confidence": 0.9
+        },
+        "priceText": "₹2,399",
+        "stock": {
+          "expected": null,
+          "actual": null,
+          "match": true,
+          "confidence": 0
+        },
+        "variantLabels": {
+          "expected": [
+            "S",
+            "M",
+            "L"
+          ],
+          "actual": [
+            "S",
+            "M",
+            "L"
+          ],
+          "match": true,
+          "confidence": 0.95
+        },
+        "descriptionPresence": {
+          "expected": true,
+          "actual": true,
+          "match": true,
+          "confidence": 0.8
+        },
+        "variantStock": {
+          "expected": {},
+          "actual": {},
+          "match": true,
+          "confidence": 1
+        }
+      },
+      "holds": [
+        {
+          "field": "description",
+          "reason": "description extracted at confidence 0.80, below the 0.90 threshold"
+        },
+        {
+          "field": "stock",
+          "reason": "no stock stated for variants S, M, L"
+        }
+      ],
+      "status": "needs_confirmation",
+      "raw": "{\"description\":{\"value\": \"Acid wash hoodie; each piece has a unique wash. Kangaroo pocket and drawstring hood visible.\", \"confidence\": 0.8},\"name\":{\"value\": \"KOHRA Acid Wash Hoodie\", \"confidence\": 0.95},\"priceText\":{\"value\": \"₹2,399\", \"confidence\": 0.9},\"stock\":{\"value\": null, \"confidence\": 0},\"variantLabels\":{\"value\": [\"S\", \"M\", \"L\"], \"confidence\": 0.95},\"variantStock\":{\"value\": [], \"confidence\": 1}}"
+    },
+    {
+      "id": "09-patang-crop-tee",
+      "servedByModelId": "z-ai/glm-5.3-flash",
+      "score": {
+        "id": "09-patang-crop-tee",
+        "name": {
+          "expected": "PATANG Crop Tee",
+          "actual": "PATANG Crop Tee",
+          "match": true,
+          "confidence": 0.95
+        },
+        "price": {
+          "expected": 79900,
+          "actual": 79900,
+          "match": true,
+          "confidence": 0.9
+        },
+        "priceText": "Rs.799",
+        "stock": {
+          "expected": null,
+          "actual": null,
+          "match": true,
+          "confidence": 0
+        },
+        "variantLabels": {
+          "expected": [
+            "lilac",
+            "mint",
+            "white"
+          ],
+          "actual": [
+            "lilac",
+            "mint",
+            "white"
+          ],
+          "match": true,
+          "confidence": 0.9
+        },
+        "descriptionPresence": {
+          "expected": true,
+          "actual": true,
+          "match": true,
+          "confidence": 0.95
+        },
+        "variantStock": {
+          "expected": {},
+          "actual": {},
+          "match": true,
+          "confidence": 0
+        }
+      },
+      "holds": [
+        {
+          "field": "stock",
+          "reason": "no stock stated for variants lilac, mint, white"
+        }
+      ],
+      "status": "needs_confirmation",
+      "raw": "{\"description\":{\"confidence\": 0.95, \"value\": \"Cotton lycra tee with boxy crop fit and drop shoulder.\"},\"name\":{\"confidence\": 0.95, \"value\": \"PATANG Crop Tee\"},\"priceText\":{\"confidence\": 0.9, \"value\": \"Rs.799\"},\"stock\":{\"confidence\": 0, \"value\": null},\"variantLabels\":{\"confidence\": 0.9, \"value\": [\"lilac\", \"mint\", \"white\"]},\"variantStock\":{\"confidence\": 0, \"value\": []}}"
+    },
+    {
+      "id": "10-thela-tote-bag",
+      "servedByModelId": "z-ai/glm-5.3-flash",
+      "score": {
+        "id": "10-thela-tote-bag",
+        "name": {
+          "expected": "THELA Canvas Tote",
+          "actual": "THELA Canvas Tote",
+          "match": true,
+          "confidence": 0.88
+        },
+        "price": {
+          "expected": 44900,
+          "actual": 44900,
+          "match": true,
+          "confidence": 0.98
+        },
+        "priceText": "₹449/-",
+        "stock": {
+          "expected": 50,
+          "actual": 50,
+          "match": true,
+          "confidence": 0.9
+        },
+        "variantLabels": {
+          "expected": [],
+          "actual": [],
+          "match": true,
+          "confidence": 0.95
+        },
+        "descriptionPresence": {
+          "expected": true,
+          "actual": true,
+          "match": true,
+          "confidence": 0.93
+        },
+        "variantStock": {
+          "expected": {},
+          "actual": {},
+          "match": true,
+          "confidence": 0.95
+        }
+      },
+      "holds": [
+        {
+          "field": "name",
+          "reason": "product name extracted at confidence 0.88, below the 0.90 threshold"
+        }
+      ],
+      "status": "needs_confirmation",
+      "raw": "{\"name\": {\"value\": \"THELA Canvas Tote\", \"confidence\": 0.88}, \"description\": {\"value\": \"Heavy 14oz canvas tote with zip-top closure and an inner phone pocket.\", \"confidence\": 0.93}, \"priceText\": {\"value\": \"₹449/-\", \"confidence\": 0.98}, \"stock\": {\"value\": 50, \"confidence\": 0.9}, \"variantLabels\": {\"value\": [], \"confidence\": 0.95}, \"variantStock\": {\"value\": [], \"confidence\": 0.95}}"
+    },
+    {
+      "id": "11-akkad-joggers",
+      "servedByModelId": "z-ai/glm-5.3-flash",
+      "score": {
+        "id": "11-akkad-joggers",
+        "name": {
+          "expected": "AKKAD Joggers",
+          "actual": "AKKAD Joggers",
+          "match": true,
+          "confidence": 0.95
+        },
+        "price": {
+          "expected": 129900,
+          "actual": 129900,
+          "match": true,
+          "confidence": 0.9
+        },
+        "priceText": "1,299/-",
+        "stock": {
+          "expected": null,
+          "actual": null,
+          "match": true,
+          "confidence": 0
+        },
+        "variantLabels": {
+          "expected": [
+            "S",
+            "M",
+            "L",
+            "XL"
+          ],
+          "actual": [
+            "S",
+            "M",
+            "L",
+            "XL"
+          ],
+          "match": true,
+          "confidence": 0.95
+        },
+        "descriptionPresence": {
+          "expected": true,
+          "actual": true,
+          "match": true,
+          "confidence": 0.95
+        },
+        "variantStock": {
+          "expected": {},
+          "actual": {},
+          "match": true,
+          "confidence": 0.95
+        }
+      },
+      "holds": [
+        {
+          "field": "stock",
+          "reason": "no stock stated for variants S, M, L, XL"
+        }
+      ],
+      "status": "needs_confirmation",
+      "raw": "{\"description\":{\"confidence\": 0.95, \"value\": \"French terry joggers with tapered fit and zip pockets.\"},\"name\":{\"confidence\": 0.95, \"value\": \"AKKAD Joggers\"},\"priceText\":{\"confidence\": 0.9, \"value\": \"1,299/-\"},\"stock\":{\"confidence\": 0, \"value\": null},\"variantLabels\":{\"confidence\": 0.95, \"value\": [\"S\", \"M\", \"L\", \"XL\"]},\"variantStock\":{\"confidence\": 0.95, \"value\": []}}"
+    },
+    {
+      "id": "12-bijli-varsity-jacket",
+      "servedByModelId": "z-ai/glm-5.3-flash",
+      "score": {
+        "id": "12-bijli-varsity-jacket",
+        "name": {
+          "expected": "BIJLI Varsity Jacket",
+          "actual": "BIJLI Varsity Jacket",
+          "match": true,
+          "confidence": 0.95
+        },
+        "price": {
+          "expected": 379900,
+          "actual": 379900,
+          "match": true,
+          "confidence": 0.95
+        },
+        "priceText": "₹3,799",
+        "stock": {
+          "expected": 6,
+          "actual": 6,
+          "match": true,
+          "confidence": 0.9
+        },
+        "variantLabels": {
+          "expected": [
+            "M",
+            "L"
+          ],
+          "actual": [
+            "M",
+            "L"
+          ],
+          "match": true,
+          "confidence": 0.95
+        },
+        "descriptionPresence": {
+          "expected": true,
+          "actual": true,
+          "match": true,
+          "confidence": 0.95
+        },
+        "variantStock": {
+          "expected": {},
+          "actual": {},
+          "match": true,
+          "confidence": 0.9
+        }
+      },
+      "holds": [
+        {
+          "field": "stock",
+          "reason": "the caption states a total of 6 across variants but no per-variant split — splitting it would be invention, the merchant has to"
+        }
+      ],
+      "status": "needs_confirmation",
+      "raw": "{\"description\":{\"confidence\": 0.95, \"value\": \"Wool blend body with PU sleeves and a chenille patch.\"},\"name\":{\"confidence\": 0.95, \"value\": \"BIJLI Varsity Jacket\"},\"priceText\":{\"confidence\": 0.95, \"value\": \"₹3,799\"},\"stock\":{\"confidence\": 0.9, \"value\": 6},\"variantLabels\":{\"confidence\": 0.95, \"value\": [\"M\", \"L\"]},\"variantStock\":{\"confidence\": 0.9, \"value\": []}}"
+    },
+    {
+      "id": "13-chai-biscuit-socks",
+      "servedByModelId": "z-ai/glm-5.3-flash",
+      "score": {
+        "id": "13-chai-biscuit-socks",
+        "name": {
+          "expected": "CHAI-BISCUIT Socks",
+          "actual": "CHAI-BISCUIT Socks",
+          "match": true,
+          "confidence": 0.9
+        },
+        "price": {
+          "expected": 29900,
+          "actual": 29900,
+          "match": true,
+          "confidence": 0.95
+        },
+        "priceText": "₹299 for the pack",
+        "stock": {
+          "expected": null,
+          "actual": null,
+          "match": true,
+          "confidence": 0
+        },
+        "variantLabels": {
+          "expected": [],
+          "actual": [],
+          "match": true,
+          "confidence": 0.9
+        },
+        "descriptionPresence": {
+          "expected": true,
+          "actual": true,
+          "match": true,
+          "confidence": 0.95
+        },
+        "variantStock": {
+          "expected": {},
+          "actual": {},
+          "match": true,
+          "confidence": 0.9
+        }
+      },
+      "holds": [
+        {
+          "field": "stock",
+          "reason": "the caption never states a stock count"
+        }
+      ],
+      "status": "needs_confirmation",
+      "raw": "{\"description\":{\"confidence\": 0.95, \"value\": \"Pack of 3 socks in chai brown, biscuit beige, and doodh white. Combed cotton with ribbed cuff, free size.\"},\"name\":{\"confidence\": 0.9, \"value\": \"CHAI-BISCUIT Socks\"},\"priceText\":{\"confidence\": 0.95, \"value\": \"₹299 for the pack\"},\"stock\":{\"confidence\": 0, \"value\": null},\"variantLabels\":{\"confidence\": 0.9, \"value\": []},\"variantStock\":{\"confidence\": 0.9, \"value\": []}}"
+    },
+    {
+      "id": "14-jugaad-utility-vest",
+      "servedByModelId": "z-ai/glm-5.3-flash",
+      "score": {
+        "id": "14-jugaad-utility-vest",
+        "name": {
+          "expected": "JUGAAD Utility Vest",
+          "actual": "JUGAAD Utility Vest",
+          "match": true,
+          "confidence": 0.95
+        },
+        "price": {
+          "expected": 159900,
+          "actual": 159900,
+          "match": true,
+          "confidence": 0.95
+        },
+        "priceText": "Rs. 1,599/-",
+        "stock": {
+          "expected": null,
+          "actual": null,
+          "match": true,
+          "confidence": 0
+        },
+        "variantLabels": {
+          "expected": [
+            "M",
+            "L"
+          ],
+          "actual": [
+            "M",
+            "L"
+          ],
+          "match": true,
+          "confidence": 0.95
+        },
+        "descriptionPresence": {
+          "expected": true,
+          "actual": true,
+          "match": true,
+          "confidence": 0.9
+        },
+        "variantStock": {
+          "expected": {},
+          "actual": {},
+          "match": true,
+          "confidence": 1
+        }
+      },
+      "holds": [
+        {
+          "field": "stock",
+          "reason": "no stock stated for variants M, L"
+        }
+      ],
+      "status": "needs_confirmation",
+      "raw": "{\"description\":{\"confidence\": 0.9, \"value\": \"Utility vest with 6 pockets, mesh lining, and D-rings.\"},\"name\":{\"confidence\": 0.95, \"value\": \"JUGAAD Utility Vest\"},\"priceText\":{\"confidence\": 0.95, \"value\": \"Rs. 1,599/-\"},\"stock\":{\"confidence\": 0, \"value\": null},\"variantLabels\":{\"confidence\": 0.95, \"value\": [\"M\", \"L\"]},\"variantStock\":{\"confidence\": 1, \"value\": []}}"
+    },
+    {
+      "id": "15-monsoon-check-shacket",
+      "servedByModelId": "z-ai/glm-5.3-flash",
+      "score": {
+        "id": "15-monsoon-check-shacket",
+        "name": {
+          "expected": "MONSOON Check Shacket",
+          "actual": "MONSOON Check Shacket",
+          "match": true,
+          "confidence": 0.9
+        },
+        "price": {
+          "expected": 199900,
+          "actual": 199900,
+          "match": true,
+          "confidence": 0.95
+        },
+        "priceText": "1,999",
+        "stock": {
+          "expected": 11,
+          "actual": 11,
+          "match": true,
+          "confidence": 0.9
+        },
+        "variantLabels": {
+          "expected": [
+            "M",
+            "L",
+            "XL",
+            "XXL"
+          ],
+          "actual": [
+            "M",
+            "L",
+            "XL",
+            "XXL"
+          ],
+          "match": true,
+          "confidence": 0.95
+        },
+        "descriptionPresence": {
+          "expected": true,
+          "actual": true,
+          "match": true,
+          "confidence": 0.95
+        },
+        "variantStock": {
+          "expected": {},
+          "actual": {},
+          "match": true,
+          "confidence": 0.95
+        }
+      },
+      "holds": [
+        {
+          "field": "stock",
+          "reason": "the caption states a total of 11 across variants but no per-variant split — splitting it would be invention, the merchant has to"
+        }
+      ],
+      "status": "needs_confirmation",
+      "raw": "{\"description\":{\"confidence\": 0.95, \"value\": \"Brushed flannel check shacket with oversized fit and button front; worn as a shirt or jacket.\"},\"name\":{\"confidence\": 0.9, \"value\": \"MONSOON Check Shacket\"},\"priceText\":{\"confidence\": 0.95, \"value\": \"1,999\"},\"stock\":{\"confidence\": 0.9, \"value\": 11},\"variantLabels\":{\"confidence\": 0.95, \"value\": [\"M\", \"L\", \"XL\", \"XXL\"]},\"variantStock\":{\"confidence\": 0.95, \"value\": []}}"
+    },
+    {
+      "id": "16-sadak-slides",
+      "servedByModelId": "z-ai/glm-5.3-flash",
+      "score": {
+        "id": "16-sadak-slides",
+        "name": {
+          "expected": "SADAK Slides",
+          "actual": "SADAK Slides",
+          "match": true,
+          "confidence": 0.95
+        },
+        "price": {
+          "expected": 69900,
+          "actual": 69900,
+          "match": true,
+          "confidence": 0.95
+        },
+        "priceText": "₹699",
+        "stock": {
+          "expected": null,
+          "actual": null,
+          "match": true,
+          "confidence": 0
+        },
+        "variantLabels": {
+          "expected": [
+            "UK 7",
+            "UK 8",
+            "UK 9",
+            "UK 10"
+          ],
+          "actual": [
+            "UK 7",
+            "UK 8",
+            "UK 9",
+            "UK 10"
+          ],
+          "match": true,
+          "confidence": 0.9
+        },
+        "descriptionPresence": {
+          "expected": true,
+          "actual": true,
+          "match": true,
+          "confidence": 0.9
+        },
+        "variantStock": {
+          "expected": {},
+          "actual": {},
+          "match": true,
+          "confidence": 0
+        }
+      },
+      "holds": [
+        {
+          "field": "stock",
+          "reason": "no stock stated for variants UK 7, UK 8, UK 9, UK 10"
+        }
+      ],
+      "status": "needs_confirmation",
+      "raw": "{\"description\":{\"confidence\": 0.9, \"value\": \"Padded strap slides with a cushioned, cloud-like feel and chunky sole.\"},\"name\":{\"confidence\": 0.95, \"value\": \"SADAK Slides\"},\"priceText\":{\"confidence\": 0.95, \"value\": \"₹699\"},\"stock\":{\"confidence\": 0, \"value\": null},\"variantLabels\":{\"confidence\": 0.9, \"value\": [\"UK 7\", \"UK 8\", \"UK 9\", \"UK 10\"]},\"variantStock\":{\"confidence\": 0, \"value\": []}}"
+    },
+    {
+      "id": "17-hawa-low-top-sneakers",
+      "servedByModelId": "z-ai/glm-5.3-flash",
+      "score": {
+        "id": "17-hawa-low-top-sneakers",
+        "name": {
+          "expected": "HAWA Low Top Sneakers",
+          "actual": "HAWA Low Top Sneakers",
+          "match": true,
+          "confidence": 0.95
+        },
+        "price": {
+          "expected": 349900,
+          "actual": 349900,
+          "match": true,
+          "confidence": 0.98
+        },
+        "priceText": "₹3,499/-",
+        "stock": {
+          "expected": null,
+          "actual": null,
+          "match": true,
+          "confidence": 0
+        },
+        "variantLabels": {
+          "expected": [
+            "UK 6",
+            "UK 7",
+            "UK 8",
+            "UK 9",
+            "UK 10"
+          ],
+          "actual": [
+            "UK 6",
+            "UK 7",
+            "UK 8",
+            "UK 9",
+            "UK 10"
+          ],
+          "match": true,
+          "confidence": 0.95
+        },
+        "descriptionPresence": {
+          "expected": true,
+          "actual": true,
+          "match": true,
+          "confidence": 0.95
+        },
+        "variantStock": {
+          "expected": {},
+          "actual": {},
+          "match": true,
+          "confidence": 0
+        }
+      },
+      "holds": [
+        {
+          "field": "stock",
+          "reason": "no stock stated for variants UK 6, UK 7, UK 8, UK 9, UK 10"
+        }
+      ],
+      "status": "needs_confirmation",
+      "raw": "{\"description\":{\"confidence\": 0.95, \"value\": \"White vegan leather low-top sneakers with gum sole and cushioned insole.\"},\"name\":{\"confidence\": 0.95, \"value\": \"HAWA Low Top Sneakers\"},\"priceText\":{\"confidence\": 0.98, \"value\": \"₹3,499/-\"},\"stock\":{\"confidence\": 0, \"value\": null},\"variantLabels\":{\"confidence\": 0.95, \"value\": [\"UK 6\", \"UK 7\", \"UK 8\", \"UK 9\", \"UK 10\"]},\"variantStock\":{\"confidence\": 0, \"value\": []}}"
+    },
+    {
+      "id": "18-dhundh-beanie",
+      "servedByModelId": "z-ai/glm-5.3-flash",
+      "score": {
+        "id": "18-dhundh-beanie",
+        "name": {
+          "expected": "DHUNDH Beanie",
+          "actual": "DHUNDH Beanie",
+          "match": true,
+          "confidence": 0.95
+        },
+        "price": {
+          "expected": 49900,
+          "actual": 49900,
+          "match": true,
+          "confidence": 0.95
+        },
+        "priceText": "Rs 499",
+        "stock": {
+          "expected": 30,
+          "actual": 30,
+          "match": true,
+          "confidence": 0.9
+        },
+        "variantLabels": {
+          "expected": [
+            "black",
+            "grey"
+          ],
+          "actual": [
+            "black",
+            "grey"
+          ],
+          "match": true,
+          "confidence": 0.95
+        },
+        "descriptionPresence": {
+          "expected": true,
+          "actual": true,
+          "match": true,
+          "confidence": 0.9
+        },
+        "variantStock": {
+          "expected": {},
+          "actual": {},
+          "match": true,
+          "confidence": 0.9
+        }
+      },
+      "holds": [
+        {
+          "field": "stock",
+          "reason": "the caption states a total of 30 across variants but no per-variant split — splitting it would be invention, the merchant has to"
+        }
+      ],
+      "status": "needs_confirmation",
+      "raw": "{\"name\": {\"value\": \"DHUNDH Beanie\", \"confidence\": 0.95}, \"description\": {\"value\": \"Ribbed knit beanie with a fold-over cuff.\", \"confidence\": 0.9}, \"priceText\": {\"value\": \"Rs 499\", \"confidence\": 0.95}, \"stock\": {\"value\": 30, \"confidence\": 0.9}, \"variantLabels\": {\"value\": [\"black\", \"grey\"], \"confidence\": 0.95}, \"variantStock\": {\"value\": [], \"confidence\": 0.9}}"
+    },
+    {
+      "id": "19-crossbody-sling-bag",
+      "servedByModelId": "z-ai/glm-5.3-flash",
+      "score": {
+        "id": "19-crossbody-sling-bag",
+        "name": {
+          "expected": "Crossbody Sling Bag",
+          "actual": "Black Crossbody Sling Bag",
+          "match": false,
+          "confidence": 0.8
+        },
+        "price": {
+          "expected": 89900,
+          "actual": 89900,
+          "match": true,
+          "confidence": 0.85
+        },
+        "priceText": "₹899",
+        "stock": {
+          "expected": 14,
+          "actual": 14,
+          "match": true,
+          "confidence": 0.95
+        },
+        "variantLabels": {
+          "expected": [],
+          "actual": [],
+          "match": true,
+          "confidence": 0.95
+        },
+        "descriptionPresence": {
+          "expected": true,
+          "actual": true,
+          "match": true,
+          "confidence": 0.95
+        },
+        "variantStock": {
+          "expected": {},
+          "actual": {},
+          "match": true,
+          "confidence": 0.95
+        }
+      },
+      "holds": [
+        {
+          "field": "name",
+          "reason": "product name extracted at confidence 0.80, below the 0.90 threshold"
+        },
+        {
+          "field": "price",
+          "reason": "price extracted at confidence 0.85, below the 0.90 threshold"
+        }
+      ],
+      "status": "needs_confirmation",
+      "raw": "{\"name\": {\"value\": \"Black Crossbody Sling Bag\", \"confidence\": 0.8}, \"description\": {\"value\": \"Water resistant sling bag with 3 zip compartments, fits an 11 inch tablet, and has an adjustable strap.\", \"confidence\": 0.95}, \"priceText\": {\"value\": \"₹899\", \"confidence\": 0.85}, \"stock\": {\"value\": 14, \"confidence\": 0.95}, \"variantLabels\": {\"value\": [], \"confidence\": 0.95}, \"variantStock\": {\"value\": [], \"confidence\": 0.95}}"
+    },
+    {
+      "id": "20-antenna-graphic-hoodie",
+      "servedByModelId": "z-ai/glm-5.3-flash",
+      "score": {
+        "id": "20-antenna-graphic-hoodie",
+        "name": {
+          "expected": "ANTENNA Graphic Hoodie",
+          "actual": "ANTENNA Graphic Hoodie",
+          "match": true,
+          "confidence": 0.95
+        },
+        "price": {
+          "expected": 149900,
+          "actual": 149900,
+          "match": true,
+          "confidence": 0.97
+        },
+        "priceText": "₹1,499",
+        "stock": {
+          "expected": null,
+          "actual": null,
+          "match": true,
+          "confidence": 0
+        },
+        "variantLabels": {
+          "expected": [
+            "S",
+            "M",
+            "L",
+            "XL"
+          ],
+          "actual": [
+            "S",
+            "M",
+            "L",
+            "XL"
+          ],
+          "match": true,
+          "confidence": 0.97
+        },
+        "descriptionPresence": {
+          "expected": true,
+          "actual": true,
+          "match": true,
+          "confidence": 0.9
+        },
+        "variantStock": {
+          "expected": {},
+          "actual": {},
+          "match": true,
+          "confidence": 0.95
+        }
+      },
+      "holds": [
+        {
+          "field": "stock",
+          "reason": "no stock stated for variants S, M, L, XL"
+        }
+      ],
+      "status": "needs_confirmation",
+      "raw": "{\"name\": {\"value\": \"ANTENNA Graphic Hoodie\", \"confidence\": 0.95}, \"description\": {\"value\": \"Heavyweight 380 gsm hoodie with drop shoulder fit and a 'signal strong' antenna back print.\", \"confidence\": 0.9}, \"priceText\": {\"value\": \"₹1,499\", \"confidence\": 0.97}, \"stock\": {\"value\": null, \"confidence\": 0}, \"variantLabels\": {\"value\": [\"S\", \"M\", \"L\", \"XL\"], \"confidence\": 0.97}, \"variantStock\": {\"value\": [], \"confidence\": 0.95}}"
+    },
+    {
+      "id": "21-khoya-denim-jacket",
+      "servedByModelId": "z-ai/glm-5.3-flash",
+      "score": {
+        "id": "21-khoya-denim-jacket",
+        "name": {
+          "expected": "KHOYA Denim Jacket",
+          "actual": "KHOYA Denim Jacket",
+          "match": true,
+          "confidence": 0.98
+        },
+        "price": {
+          "expected": 279900,
+          "actual": 279900,
+          "match": true,
+          "confidence": 0.98
+        },
+        "priceText": "Rs. 2,799/-",
+        "stock": {
+          "expected": 8,
+          "actual": 8,
+          "match": true,
+          "confidence": 0.95
+        },
+        "variantLabels": {
+          "expected": [
+            "S",
+            "M",
+            "L",
+            "XL"
+          ],
+          "actual": [
+            "S",
+            "M",
+            "L",
+            "XL"
+          ],
+          "match": true,
+          "confidence": 0.98
+        },
+        "descriptionPresence": {
+          "expected": true,
+          "actual": true,
+          "match": true,
+          "confidence": 0.95
+        },
+        "variantStock": {
+          "expected": {},
+          "actual": {},
+          "match": true,
+          "confidence": 0.95
+        }
+      },
+      "holds": [
+        {
+          "field": "stock",
+          "reason": "the caption states a total of 8 across variants but no per-variant split — splitting it would be invention, the merchant has to"
+        }
+      ],
+      "status": "needs_confirmation",
+      "raw": "{\"name\": {\"value\": \"KHOYA Denim Jacket\", \"confidence\": 0.98}, \"description\": {\"value\": \"12oz washed indigo denim with an oversized fit and antique brass buttons.\", \"confidence\": 0.95}, \"priceText\": {\"value\": \"Rs. 2,799/-\", \"confidence\": 0.98}, \"stock\": {\"value\": 8, \"confidence\": 0.95}, \"variantLabels\": {\"value\": [\"S\", \"M\", \"L\", \"XL\"], \"confidence\": 0.98}, \"variantStock\": {\"value\": [], \"confidence\": 0.95}}"
+    },
+    {
+      "id": "22-firangi-track-pants",
+      "servedByModelId": "z-ai/glm-5.3-flash",
+      "score": {
+        "id": "22-firangi-track-pants",
+        "name": {
+          "expected": "FIRANGI Track Pants",
+          "actual": "FIRANGI Track Pants",
+          "match": true,
+          "confidence": 0.95
+        },
+        "price": {
+          "expected": 159900,
+          "actual": 159900,
+          "match": true,
+          "confidence": 0.85
+        },
+        "priceText": "1,599",
+        "stock": {
+          "expected": null,
+          "actual": null,
+          "match": true,
+          "confidence": 0
+        },
+        "variantLabels": {
+          "expected": [
+            "S",
+            "M",
+            "L",
+            "XL",
+            "XXL"
+          ],
+          "actual": [
+            "S",
+            "M",
+            "L",
+            "XL",
+            "XXL"
+          ],
+          "match": true,
+          "confidence": 0.95
+        },
+        "descriptionPresence": {
+          "expected": true,
+          "actual": true,
+          "match": true,
+          "confidence": 0.9
+        },
+        "variantStock": {
+          "expected": {},
+          "actual": {},
+          "match": true,
+          "confidence": 0.95
+        }
+      },
+      "holds": [
+        {
+          "field": "price",
+          "reason": "price extracted at confidence 0.85, below the 0.90 threshold"
+        },
+        {
+          "field": "stock",
+          "reason": "no stock stated for variants S, M, L, XL, XXL"
+        }
+      ],
+      "status": "needs_confirmation",
+      "raw": "{\"name\": {\"value\": \"FIRANGI Track Pants\", \"confidence\": 0.95}, \"description\": {\"value\": \"Poly-cotton track pants with a contrast side stripe and ankle zip.\", \"confidence\": 0.9}, \"priceText\": {\"value\": \"1,599\", \"confidence\": 0.85}, \"stock\": {\"value\": null, \"confidence\": 0}, \"variantLabels\": {\"value\": [\"S\", \"M\", \"L\", \"XL\", \"XXL\"], \"confidence\": 0.95}, \"variantStock\": {\"value\": [], \"confidence\": 0.95}}"
+    },
+    {
+      "id": "23-machli-mesh-shorts",
+      "servedByModelId": "z-ai/glm-5.3-flash",
+      "score": {
+        "id": "23-machli-mesh-shorts",
+        "name": {
+          "expected": "MACHLI Mesh Shorts",
+          "actual": "MACHLI Mesh Shorts",
+          "match": true,
+          "confidence": 0.95
+        },
+        "price": {
+          "expected": 89900,
+          "actual": 89900,
+          "match": true,
+          "confidence": 0.98
+        },
+        "priceText": "₹899/-",
+        "stock": {
+          "expected": null,
+          "actual": 13,
+          "match": false,
+          "confidence": 0.9
+        },
+        "variantLabels": {
+          "expected": [
+            "S",
+            "M",
+            "L"
+          ],
+          "actual": [
+            "S",
+            "M",
+            "L"
+          ],
+          "match": true,
+          "confidence": 0.95
+        },
+        "descriptionPresence": {
+          "expected": true,
+          "actual": true,
+          "match": true,
+          "confidence": 0.95
+        },
+        "variantStock": {
+          "expected": {
+            "S": 4,
+            "M": 7,
+            "L": 2
+          },
+          "actual": {
+            "S": 4,
+            "M": 7,
+            "L": 2
+          },
+          "match": true,
+          "confidence": 0.95
+        }
+      },
+      "holds": [],
+      "status": "published",
+      "raw": "{\"description\":{\"confidence\": 0.95, \"value\": \"Double-layer quick-dry mesh shorts with elastic drawstring waist, suitable for gym, beach, or everyday wear.\"},\"name\":{\"confidence\": 0.95, \"value\": \"MACHLI Mesh Shorts\"},\"priceText\":{\"confidence\": 0.98, \"value\": \"₹899/-\"},\"stock\":{\"confidence\": 0.9, \"value\": 13},\"variantLabels\":{\"confidence\": 0.95, \"value\": [\"S\", \"M\", \"L\"]},\"variantStock\":{\"confidence\": 0.95, \"value\": [{\"count\": 4, \"label\": \"S\"}, {\"count\": 7, \"label\": \"M\"}, {\"count\": 2, \"label\": \"L\"}]}}"
+    },
+    {
+      "id": "24-jalebi-tie-dye-tee",
+      "servedByModelId": "z-ai/glm-5.3-flash",
+      "score": {
+        "id": "24-jalebi-tie-dye-tee",
+        "name": {
+          "expected": "JALEBI Tie-Dye Tee",
+          "actual": "JALEBI Tie-Dye Tee",
+          "match": true,
+          "confidence": 0.95
+        },
+        "price": {
+          "expected": 99900,
+          "actual": 99900,
+          "match": true,
+          "confidence": 0.9
+        },
+        "priceText": "Rs.999",
+        "stock": {
+          "expected": null,
+          "actual": null,
+          "match": true,
+          "confidence": 0
+        },
+        "variantLabels": {
+          "expected": [
+            "M",
+            "L",
+            "XL"
+          ],
+          "actual": [
+            "M",
+            "L",
+            "XL"
+          ],
+          "match": true,
+          "confidence": 0.95
+        },
+        "descriptionPresence": {
+          "expected": true,
+          "actual": true,
+          "match": true,
+          "confidence": 0.9
+        },
+        "variantStock": {
+          "expected": {},
+          "actual": {},
+          "match": true,
+          "confidence": 0
+        }
+      },
+      "holds": [
+        {
+          "field": "stock",
+          "reason": "no stock stated for variants M, L, XL"
+        }
+      ],
+      "status": "needs_confirmation",
+      "raw": "{\"description\":{\"confidence\": 0.9, \"value\": \"Hand-dyed tie-dye tee in Jaipur, 200 gsm fabric, each piece one of one. Wash care: cold water, max 30°C.\"},\"name\":{\"confidence\": 0.95, \"value\": \"JALEBI Tie-Dye Tee\"},\"priceText\":{\"confidence\": 0.9, \"value\": \"Rs.999\"},\"stock\":{\"confidence\": 0, \"value\": null},\"variantLabels\":{\"confidence\": 0.95, \"value\": [\"M\", \"L\", \"XL\"]},\"variantStock\":{\"confidence\": 0, \"value\": []}}"
+    },
+    {
+      "id": "25-raakh-cargo-shorts",
+      "servedByModelId": "z-ai/glm-5.3-flash",
+      "score": {
+        "id": "25-raakh-cargo-shorts",
+        "name": {
+          "expected": "RAAKH Cargo Shorts",
+          "actual": "RAAKH Cargo Shorts",
+          "match": true,
+          "confidence": 0.95
+        },
+        "price": {
+          "expected": 109900,
+          "actual": 109900,
+          "match": true,
+          "confidence": 0.95
+        },
+        "priceText": "₹1,099/-",
+        "stock": {
+          "expected": 16,
+          "actual": 16,
+          "match": true,
+          "confidence": 0.85
+        },
+        "variantLabels": {
+          "expected": [
+            "30",
+            "32",
+            "34"
+          ],
+          "actual": [
+            "30",
+            "32",
+            "34"
+          ],
+          "match": true,
+          "confidence": 0.9
+        },
+        "descriptionPresence": {
+          "expected": true,
+          "actual": true,
+          "match": true,
+          "confidence": 0.9
+        },
+        "variantStock": {
+          "expected": {},
+          "actual": {},
+          "match": true,
+          "confidence": 0.95
+        }
+      },
+      "holds": [
+        {
+          "field": "stock",
+          "reason": "stock 16 extracted at confidence 0.85, below the 0.90 threshold"
+        },
+        {
+          "field": "stock",
+          "reason": "the caption states a total of 16 across variants but no per-variant split — splitting it would be invention, the merchant has to"
+        }
+      ],
+      "status": "needs_confirmation",
+      "raw": "{\"description\":{\"confidence\": 0.9, \"value\": \"Knee-length cargo shorts in washed grey cotton twill with 6 pockets.\"},\"name\":{\"confidence\": 0.95, \"value\": \"RAAKH Cargo Shorts\"},\"priceText\":{\"confidence\": 0.95, \"value\": \"₹1,099/-\"},\"stock\":{\"confidence\": 0.85, \"value\": 16},\"variantLabels\":{\"confidence\": 0.9, \"value\": [\"30\", \"32\", \"34\"]},\"variantStock\":{\"confidence\": 0.95, \"value\": []}}"
+    },
+    {
+      "id": "26-parinda-puffer-vest",
+      "servedByModelId": "z-ai/glm-5.3-flash",
+      "score": {
+        "id": "26-parinda-puffer-vest",
+        "name": {
+          "expected": "PARINDA Puffer Vest",
+          "actual": "PARINDA Puffer Vest",
+          "match": true,
+          "confidence": 0.95
+        },
+        "price": {
+          "expected": 249900,
+          "actual": 249900,
+          "match": true,
+          "confidence": 0.9
+        },
+        "priceText": "2,499/-",
+        "stock": {
+          "expected": 5,
+          "actual": 5,
+          "match": true,
+          "confidence": 0.9
+        },
+        "variantLabels": {
+          "expected": [
+            "M",
+            "L",
+            "XL"
+          ],
+          "actual": [
+            "M",
+            "L",
+            "XL"
+          ],
+          "match": true,
+          "confidence": 0.95
+        },
+        "descriptionPresence": {
+          "expected": true,
+          "actual": true,
+          "match": true,
+          "confidence": 0.95
+        },
+        "variantStock": {
+          "expected": {},
+          "actual": {},
+          "match": true,
+          "confidence": 0.9
+        }
+      },
+      "holds": [
+        {
+          "field": "stock",
+          "reason": "the caption states a total of 5 across variants but no per-variant split — splitting it would be invention, the merchant has to"
+        }
+      ],
+      "status": "needs_confirmation",
+      "raw": "{\"description\":{\"confidence\": 0.95, \"value\": \"Lightweight quilted puffer vest with high neck and zip pockets.\"},\"name\":{\"confidence\": 0.95, \"value\": \"PARINDA Puffer Vest\"},\"priceText\":{\"confidence\": 0.9, \"value\": \"2,499/-\"},\"stock\":{\"confidence\": 0.9, \"value\": 5},\"variantLabels\":{\"confidence\": 0.95, \"value\": [\"M\", \"L\", \"XL\"]},\"variantStock\":{\"confidence\": 0.9, \"value\": []}}"
+    },
+    {
+      "id": "27-taxi-camp-collar-shirt",
+      "servedByModelId": "z-ai/glm-5.3-flash",
+      "score": {
+        "id": "27-taxi-camp-collar-shirt",
+        "name": {
+          "expected": "TAXI Camp Collar Shirt",
+          "actual": "TAXI Camp Collar Shirt",
+          "match": true,
+          "confidence": 0.95
+        },
+        "price": {
+          "expected": 139900,
+          "actual": 139900,
+          "match": true,
+          "confidence": 0.95
+        },
+        "priceText": "Rs 1,399/-",
+        "stock": {
+          "expected": null,
+          "actual": null,
+          "match": true,
+          "confidence": 0
+        },
+        "variantLabels": {
+          "expected": [
+            "M",
+            "L",
+            "XL"
+          ],
+          "actual": [
+            "M",
+            "L",
+            "XL"
+          ],
+          "match": true,
+          "confidence": 0.95
+        },
+        "descriptionPresence": {
+          "expected": true,
+          "actual": true,
+          "match": true,
+          "confidence": 0.95
+        },
+        "variantStock": {
+          "expected": {},
+          "actual": {},
+          "match": true,
+          "confidence": 1
+        }
+      },
+      "holds": [
+        {
+          "field": "stock",
+          "reason": "no stock stated for variants M, L, XL"
+        }
+      ],
+      "status": "needs_confirmation",
+      "raw": "{\"description\":{\"confidence\": 0.95, \"value\": \"Kaali-peeli inspired taxi print viscose shirt with Cuban camp collar.\"},\"name\":{\"confidence\": 0.95, \"value\": \"TAXI Camp Collar Shirt\"},\"priceText\":{\"confidence\": 0.95, \"value\": \"Rs 1,399/-\"},\"stock\":{\"confidence\": 0, \"value\": null},\"variantLabels\":{\"confidence\": 0.95, \"value\": [\"M\", \"L\", \"XL\"]},\"variantStock\":{\"confidence\": 1, \"value\": []}}"
+    },
+    {
+      "id": "28-chandni-glow-tee",
+      "servedByModelId": "z-ai/glm-5.3-flash",
+      "score": {
+        "id": "28-chandni-glow-tee",
+        "name": {
+          "expected": "CHANDNI Glow Print Oversized Tee",
+          "actual": "CHANDNI Glow Print Oversized T-Shirt",
+          "match": false,
+          "confidence": 0.85
+        },
+        "price": {
+          "expected": 99900,
+          "actual": 99900,
+          "match": true,
+          "confidence": 0.95
+        },
+        "priceText": "999/-",
+        "stock": {
+          "expected": 21,
+          "actual": 21,
+          "match": true,
+          "confidence": 0.9
+        },
+        "variantLabels": {
+          "expected": [
+            "S",
+            "M",
+            "L",
+            "XL",
+            "XXL"
+          ],
+          "actual": [
+            "S",
+            "M",
+            "L",
+            "XL",
+            "XXL"
+          ],
+          "match": true,
+          "confidence": 0.98
+        },
+        "descriptionPresence": {
+          "expected": true,
+          "actual": true,
+          "match": true,
+          "confidence": 0.95
+        },
+        "variantStock": {
+          "expected": {},
+          "actual": {},
+          "match": true,
+          "confidence": 0.95
+        }
+      },
+      "holds": [
+        {
+          "field": "name",
+          "reason": "product name extracted at confidence 0.85, below the 0.90 threshold"
+        },
+        {
+          "field": "stock",
+          "reason": "the caption states a total of 21 across variants but no per-variant split — splitting it would be invention, the merchant has to"
+        }
+      ],
+      "status": "needs_confirmation",
+      "raw": "{\"name\": {\"value\": \"CHANDNI Glow Print Oversized T-Shirt\", \"confidence\": 0.85}, \"description\": {\"value\": \"Oversized tee with a glow-in-the-dark moon print, 240 gsm fabric, in washed black.\", \"confidence\": 0.95}, \"priceText\": {\"value\": \"999/-\", \"confidence\": 0.95}, \"stock\": {\"value\": 21, \"confidence\": 0.9}, \"variantLabels\": {\"value\": [\"S\", \"M\", \"L\", \"XL\", \"XXL\"], \"confidence\": 0.98}, \"variantStock\": {\"value\": [], \"confidence\": 0.95}}"
+    }
+  ]
+}
