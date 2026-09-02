@@ -64,7 +64,7 @@ Landed: PR #47, 2026-09-03
 
 ### S1.2 Merchant face skeleton — confirmation-in-chat tools + `/merchant/mcp`
 Blocked by: S1.1.
-Landed: PR #PRNUM, 2026-09-03
+Landed: PR #49, 2026-09-03
 - [x] `src/mcp/toolResults.ts`: move `textResult`, `refusalResult`, `validationResult`, `withToolErrors` verbatim from `server.ts`; add `errorResult(code, message)`. `server.ts` imports them, no behaviour change.
 - [x] `src/mcp/merchantServer.ts`: `createMerchantMcpServer(deps)` — name `agent-store-merchant`, merchant `instructions`, tools `list_held_products`, `get_held_product`, `confirm_product` (D2 overlay over `findConfirmationProduct` + `confirmProduct`), `list_my_products` (`listPublishedVariants` grouped by product). Every handler starts with `requireMerchant`.
 - [x] `src/http/app.ts`: extract the stateless block into `mountStatelessMcp(app, path, createServer)`; mount `/mcp` and `/merchant/mcp` — the latter **before** `app.use('/merchant', …)`; add to the `/` endpoints listing.
