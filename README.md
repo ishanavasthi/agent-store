@@ -25,8 +25,7 @@ Budget, and written to an append-only audit log a separate auditor re-checks.
 | Surface | What it does |
 |---|---|
 | `POST /mcp` | Authless MCP (Streamable HTTP, stateless). Six tools: `get_product`, `register_agent`, `declare_intent`, `create_cart`, `submit_payment`, `get_order_status`. |
-| `POST /merchant/mcp` | The Merchant face (S1.2): a *separate* authless MCP endpoint with its own tool set — `list_held_products`, `get_held_product`, `confirm_product`, `list_my_products`, and the S1.5 reads `store_summary`, `list_recent_orders`, `get_order` — so a buyer never sees a tool that edits the catalog. Every tool takes `merchantToken` (`MERCHANT_TOKEN`) and refuses `UNKNOWN_MERCHANT_TOKEN` without a valid one. `confirm_product` is additive: it overlays what the merchant said onto the stored draft and calls the same publish gate the web confirmation screen does, and never deletes a Variant. |
-| `POST /merchant/mcp` | The Merchant face (S1.2): a *separate* authless MCP endpoint with its own tool set — `list_held_products`, `get_held_product`, `confirm_product`, `list_my_products` — so a buyer never sees a tool that edits the catalog. Every tool takes `merchantToken` (`MERCHANT_TOKEN`) and refuses `UNKNOWN_MERCHANT_TOKEN` without a valid one. `confirm_product` is additive: it overlays what the merchant said onto the stored draft and calls the same publish gate the web confirmation screen does, and never deletes a Variant. `submit_catalog_item` (S1.3) adds a Product from a caption (plus an optional public photo URL or inline base64): **extraction always runs server-side** through the same pipeline `ingest:demo` uses, so the connector never sends extracted fields — it sends the caption verbatim. Without an extraction model configured that one tool answers `EXTRACTION_NOT_CONFIGURED`; the server still boots and serves its catalog. |
+| `POST /merchant/mcp` | The Merchant face: a *separate* authless MCP endpoint with its own tool set, so a buyer never sees a tool that edits the catalog. `submit_catalog_item` (S1.3) adds a Product from a caption (plus an optional public photo URL or inline base64): **extraction always runs server-side** through the same pipeline `ingest:demo` uses, so the connector never sends extracted fields — it sends the caption verbatim. `list_held_products`, `get_held_product`, `confirm_product`, `list_my_products` (S1.2) work the confirmation queue, and `store_summary`, `list_recent_orders`, `get_order` (S1.5) read the store. Every tool takes `merchantToken` (`MERCHANT_TOKEN`) and refuses `UNKNOWN_MERCHANT_TOKEN` without a valid one. `confirm_product` is additive: it overlays what the merchant said onto the stored draft and calls the same publish gate the web confirmation screen does, and never deletes a Variant. Without an extraction model configured that one tool answers `EXTRACTION_NOT_CONFIGURED`; the server still boots and serves its catalog. See [ADR-0005](docs/adr/0005-merchant-identity-in-protocol-on-a-separate-face.md). |
 | `GET /.well-known/agent-store.json` | Discovery doc describing both protocol faces: the MCP endpoint and the REST base + endpoints, auth model, money conventions, failure shapes. |
 | `/acp/*` | The ACP-flavored REST twin (T14): `GET /acp/products`, `POST /acp/agents`, `POST /acp/intents`, `POST /acp/carts`, `POST /acp/payments`, `GET /acp/orders/:orderId` — the same core and trust layer as MCP, `Authorization: Bearer <agentToken>`. Refusals and Receipts are identical in shape on both faces. |
 | `POST /webhooks/razorpay` | Verifies the Razorpay webhook signature, then flips the domain Order to `paid` — or writes an anomaly and leaves it alone. |
@@ -34,6 +33,7 @@ Budget, and written to an append-only audit log a separate auditor re-checks.
 | `/viewer/*` | The React ledger SPA (T7, T13) over those endpoints: directory, Order timeline, Refusal timeline, and the merchant confirmation queue at `/viewer/confirm`. |
 | `/merchant/confirmations` | The confirmation screen's API (T13): the worklist of Products held in `needs-confirmation`, and the publish-on-confirm write. Every publish decision is made server-side, so a client speaking raw HTTP meets the same wall as the UI. |
 | `GET /payment-callback` | Where Razorpay returns the human's browser after they approve. Cosmetic — the webhook is what marks the Order paid. |
+| `GET /demo/images/<file>.jpg` | The demo dataset's product photos, served straight from `fixtures/demo-dataset/images` with a one-hour `Cache-Control` (S1.4). The repository is private, so this deployment is the only public origin those photos have — which is what makes `submit_catalog_item`'s `imageUrl` demonstrable. A missing file is a 404, never the viewer SPA. |
 | `GET /healthz` | Health check; also the keep-warm ping target. |
 
 The flow the mandate chain drives:
@@ -345,6 +345,13 @@ Two deployments run the same commit against the same Neon database:
 only) and Render's blueprint is deployed by hand. Merging is not deploying — push the
 deploy yourself, one platform at a time, and check `/healthz` before the next.
 
+**For this release, Railway only.** The merchant face, `submit_catalog_item` and
+`/demo/images` ship to Railway; Render deliberately stays on its previous build and is not
+redeployed (plan `docs/superpowers/plans/2026-09-03-pre-release.md` D8). So the Render URL
+above serves the buyer face and the audit viewer as they were, and answers 404 on
+`/merchant/mcp` and `/demo/images` — that is expected, not a broken deploy. Railway is the
+URL to connect a client to, and the one the demo runs against.
+
 Standing up your own:
 
 1. Create a Neon project; copy the **pooled** connection string.
@@ -381,7 +388,7 @@ link for you to approve. Approve it with `success@razorpay`, then ask Claude to 
 each mandate, each verification, the Receipt. Ask it to buy something over its own declared
 Cap instead and the Refusal gets its own timeline.
 
-### Merchant connector (working the confirmation queue from chat)
+### Merchant connector (add products from chat)
 
 The merchant connects a **second** custom connector, to the merchant face:
 
@@ -395,7 +402,33 @@ Also no authentication. Identity is the store's `MERCHANT_TOKEN`, presented as t
 a valid one every tool refuses `UNKNOWN_MERCHANT_TOKEN` (recoverable — present the right
 one and retry).
 
-Then ask Claude what is waiting on you. It calls `list_held_products` to see the Products
+#### Adding a product
+
+Drop the post's screenshot into the chat (or paste the caption), and say *"new drop — add
+this to my store"* with the token. Claude calls `submit_catalog_item` once, with the
+caption **verbatim** — its own words for what the photo shows are not a caption, and the
+tool's description says so. A public photo link goes in `imageUrl`; `/demo/images/<file>.jpg`
+on this deployment is one, and the server fetches it (http(s) only, `image/*` only, 4 MiB
+cap, no loopback or private addresses).
+
+**Extraction runs here, on the server** — the same pipeline `npm run ingest:demo` runs, not
+anything the client did (ADR-0005). So the answer comes back in one of two shapes:
+
+- `status: "published"` — every field cleared the 0.90 confidence gate. The Product is
+  buyable on the buyer face in the same call.
+- `status: "needs_confirmation"` — one or more fields did not, and `holds` names them.
+  Almost always that field is `stock`, because captions say *"jaldi karo"*, not *"6 left"*.
+  Claude asks you for the numbers and calls `confirm_product`; the Product publishes on
+  that turn. This is the pipeline working: a number nobody stated is a number nobody may
+  invent.
+
+Each call creates a new Product — there is no idempotency key, because a merchant who
+posts the same drop twice meant it. A mis-submitted one is repaired with
+`npm run catalog:archive` (back to `draft`), deliberately not from chat.
+
+#### Working the confirmation queue
+
+Ask Claude what is waiting on you and it calls `list_held_products` to see the Products
 ingestion held because the caption never stated a field, asks you for the missing numbers,
 and calls `confirm_product` to publish. That call is additive: send only what changed, and
 a Variant you do not mention keeps its stored values — nothing is ever deleted from chat.

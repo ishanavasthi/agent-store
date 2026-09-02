@@ -84,12 +84,13 @@ Landed: PR #52, 2026-09-03
 
 ### S1.4 Demo images, docs, ADR-0005, submission notes
 Blocked by: S1.3.
-- [ ] `src/http/app.ts`: `app.use('/demo/images', express.static('fixtures/demo-dataset/images', { fallthrough: false, maxAge: '1h' }))`.
-- [ ] `README.md`: "Merchant connector (add products from chat)" under "Connecting a Claude client"; env table `MERCHANT_TOKEN`, `EXTRACTION_*`; Refusal code list + `UNKNOWN_MERCHANT_TOKEN`; Render note (D8).
-- [ ] `CONTEXT.md`: **Ingestion pipeline**, **Extraction model**, **Held**, **Merchant face** (Face: two → three), **Merchant token**, **Catalog submission**; Refusal entry notes the borrow.
-- [ ] `docs/adr/0005-merchant-identity-in-protocol-on-a-separate-face.md` (house format: H1 sentence, body, `## Why`, `## Consequences`).
-- [ ] The 29th demo caption + screenshot mock (D14) under `fixtures/demo-dataset/` (not in `dataset.json`; not scored).
-- [ ] `../agent-store-pvt/submission-notes.md`: take script finalised with the deployed token/URLs.
+Landed: PR #__, 2026-09-03
+- [x] `src/http/app.ts`: `app.use('/demo/images', express.static('fixtures/demo-dataset/images', { fallthrough: false, maxAge: '1h' }))`. The app's final error handler now keeps a 4xx carried on the error, since `fallthrough: false` is how serve-static reports a miss.
+- [x] `README.md`: "Merchant connector (add products from chat)" under "Connecting a Claude client"; env table `MERCHANT_TOKEN`, `EXTRACTION_*` (already landed with S1.3/S2.2 — checked, not duplicated); Refusal code list + `UNKNOWN_MERCHANT_TOKEN`; Render note (D8); the duplicated `/merchant/mcp` surface row left by the S1.3/S1.5 merges collapsed into one.
+- [x] `CONTEXT.md`: **Ingestion pipeline**, **Extraction model**, **Held** (new here); **Merchant face** (Face: two → three), **Merchant token**, **Catalog submission** (landed with the tickets that coined them — checked); Refusal entry notes the borrow.
+- [x] `docs/adr/0005-merchant-identity-in-protocol-on-a-separate-face.md` (house format: H1 sentence, body, `## Why`, `## Consequences`).
+- [x] The 29th demo caption + screenshot mock (D14) under `fixtures/demo-dataset/29-tapri-half-zip/` (not in `dataset.json`; not scored). Wording is the owner's veto — quoted in full on the PR.
+- [ ] `../agent-store-pvt/submission-notes.md`: take script finalised with the deployed token/URLs. **Owner/coordinator only** — the deployed `MERCHANT_TOKEN` and the take rehearsal are not things a worktree worker can supply; raised on the PR's `## FOR MORNING_REVIEW`.
 
 ### S1.5 Merchant reads — `store_summary`, `list_recent_orders`, `get_order`
 Blocked by: S1.2.

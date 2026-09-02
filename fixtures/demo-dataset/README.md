@@ -30,6 +30,10 @@ The photos are generated (see below) and were always going to be.
   (`gpt-image-1`, quality medium, 1024×1024, downscaled with `sips`). Provenance, and
   the way to regenerate any image. Requires `OPENAI_API_KEY`; live billed call, not part
   of `npm test`.
+- `29-tapri-half-zip/` — the **29th caption** (S1.4, plan D14): a video prop, not a dataset
+  item. No ground-truth label, not scored, deliberately outside `dataset.json` so the
+  committed accuracy numbers stay about the 28. See its own README for why it is worded the
+  way it is.
 - `runs/<model>.json` — committed accuracy runs, written by `npm run ingest:accuracy`
   (T12): per-field scores vs these labels, every raw model response, the threshold sweep
   `AUTO_PUBLISH_THRESHOLD` is tuned on, and what the lifecycle gate published vs held.
