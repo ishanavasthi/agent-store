@@ -50,7 +50,7 @@ India's payment rails are agent-ready — UPI Reserve Pay is live, agentic check
 | Eval harness | **Hybrid**: 30 scripted protocol-level scenarios against the gateway stub (deterministic, one command, CI-runnable) + 3–5 real Claude-as-buyer runs on real test rails, reported separately. Rule-auditor reads only the audit log. |
 | Demo merchant | Small D2C streetwear brand, ~25–30 products, gpt-image-1 product shots + hand-written Hinglish captions, hand-labeled ground truth (published in repo). Second merchant (home bakery) only from buffer. |
 | Upsell `suggest_addons` | Stretch only — first item on the de-scope ladder, last item added. |
-| Repo posture | Repo reads as an infrastructure project. Release/submission logistics live in git-ignored `private/`. |
+| Repo posture | Repo reads as an infrastructure project. Release/submission logistics live in the private companion repo `agent-store-pvt` (checked out at `../agent-store-pvt/`). |
 
 Domain vocabulary is canonical in **`CONTEXT.md`** (grilling round 2026-08-23; decisions logged in DECISIONS.md, deep ones in `docs/adr/`). Load-bearing terms: **Agent** (= one registration, ADR-0001) · **Order** vs **gateway order** · **Cart mandate** (no stored cart, ADR-0002) · **Variant** (the sellable unit) · **Budget** vs **Cap** · **Refusal** vs **Decline**.
 
@@ -156,8 +156,9 @@ At every milestone boundary: **STOP — run the check, record the result here, r
 **Check:** `npm run evals` completes in one command; auditor reports zero violations from the audit log alone; scoreboard lands in the README.
 **Check result (2026-08-26, partial — 6 days early): scripted suite PASS.** `npm run evals` (PR #32): 30/30 scenarios, rule-auditor zero violations from the audit log alone (and proven able to fail on 12 planted violations), scoreboard + methodology in README. Live suite: harness merged (PR #29, CI-tested against the stub); the 3–5 real runs remain — issue #17 stays open until they're executed and reported.
 
-**M7 — Release (Sep 2–3).** Demo video recorded, README finalized, architecture doc, repo public.
-**Check:** repo public with live demo URL working; video published; release notes in `private/` completed.
+**M7 — Release (Sep 2–3 → revised 2026-09-03: build Sep 3, record + submit Sep 4, Sep 5 slack).** Demo video recorded, README finalized, architecture doc, repo public.
+**Check:** repo public with live demo URL working; video published; release notes in `../agent-store-pvt/submission-notes.md` completed.
+**Revision (2026-09-03):** the buffer is spent on two pre-release workstreams — a Merchant face over MCP (a merchant adds products from claude.ai chat; extraction stays server-side) and a provider-agnostic extraction layer (OpenAI Responses + OpenRouter, zod-validated) — because the OpenAI key is out of credits and the demo's strongest unmatched beat is ingestion. Plan, ladder, execution runbook and release gate: `docs/superpowers/plans/2026-09-03-pre-release.md`.
 
 **Buffer (Sep 4–5):** absorbs slips only. If empty: second merchant, upsell tool, polish.
 
@@ -215,4 +216,4 @@ The README carries a "what this doesn't do and why" section.
 - https://ap2-protocol.org/ · https://github.com/agentic-commerce-protocol/agentic-commerce-protocol
 - claude.ai custom connectors: https://support.claude.com/en/articles/11175166 · https://claude.com/docs/connectors/building/authentication
 - UAP reporting: business-standard.com (126070801343) · outlookbusiness.com (unified-agent-protocol)
-- Full research trail: `private/research-archive.md` (local only).
+- Full research trail: `../agent-store-pvt/research-archive.md` (private companion repo).

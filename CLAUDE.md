@@ -20,4 +20,4 @@ Record what broke in `docs/engineering-log.md` — after fixing a bug, getting a
 
 ### Release logistics
 
-Update git-ignored `private/submission-notes.md` whenever the deploy topology, a milestone date, or the demo flow changes — it carries the release checklist and video outline, and nothing in `git status` will remind you it went stale.
+Submission notes, the video outline and the research archive live in their own repo, **`agent-store-pvt`** (GitHub `ishanavasthi/agent-store-pvt`, checked out beside this one at `../agent-store-pvt/`), so every worktree sees them and they are versioned. Update `../agent-store-pvt/submission-notes.md` — and commit there — whenever the deploy topology, a milestone date, or the demo flow changes; nothing in this repo's `git status` will remind you it went stale. If a `private/` folder still exists in some checkout it is the stale pre-move copy: ignore it, never write to it.
