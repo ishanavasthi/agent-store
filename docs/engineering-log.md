@@ -8,6 +8,16 @@ Each entry is **Symptom → Cause → Fix → Lesson**. The Cause is the mechani
 
 ---
 
+## 2026-09-03 — S2.2 provider config: the plan's merge-seam note pointed the wrong way
+
+**Symptom.** The ticket said to look for `createExtractionModelIfConfigured()` in `src/ingestion/extractionModel.ts` and to rebase WS2 on `main` after S1.3 merged, per plan §7. The function was not there, and S1.3 had not merged.
+
+**Cause.** §7 was written assuming WS1 would reach that file first (S1.3 adds the null-returning factory; S2.2 rewrites the module around a provider switch), so it recorded one rebase direction as if it were a fact about the file. WS2 ran ahead of WS1, and the assumption inverted: S2.2 reached the file first. A plan sentence that describes an *ordering* reads exactly like one that describes a *dependency*, and the next agent cannot tell which it was holding.
+
+**Fix.** S2.2 owns the provider switch; `DEFAULT_EXTRACTION_MODEL`, `extractionModelId()` and `createExtractionModel()` were all kept exported and working, so S1.3's `createExtractionModelIfConfigured()` lands on top as an additive diff rather than a conflict. §7's sentence now carries a dated correction naming the real direction.
+
+**Lesson.** In a plan with parallel chains, write the seam as an invariant both sides can satisfy ("whoever lands first keeps these exports"), not as a predicted merge order — the order is the one part of a parallel plan that is not under the plan's control.
+
 ## 2026-09-03 — S2.1 zod payload + golden request
 
 ### zod reports an unrecognised key at an empty path, so the offending key names itself or nothing does

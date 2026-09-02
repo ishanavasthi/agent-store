@@ -286,8 +286,17 @@ harness rather than mocked here — see `PLAN.md` §6 and the Scoreboard above.
 | `RAZORPAY_WEBHOOK_SECRET` | yes | The secret you typed when creating the webhook pointing at `{PUBLIC_BASE_URL}/webhooks/razorpay`. |
 | `PUBLIC_BASE_URL` | yes | This deployment's public HTTPS origin, no trailing slash. Used for the Payment Link callback URL and the audit URLs handed back to agents. |
 | `PORT` | no | Defaults to `3000`. Render and Railway set this themselves. |
-| `OPENAI_API_KEY` | no | Only for ingestion (`npm run ingest:demo`, `npm run ingest:accuracy`) — the server never reads it. |
-| `EXTRACTION_MODEL` | no | Ingestion model id; defaults to `gpt-5-mini`, which is what the committed accuracy run used. |
+| `OPENAI_API_KEY` | no | Only for ingestion (`npm run ingest:demo`, `npm run ingest:accuracy`) — the server never reads it. The fallback key when `EXTRACTION_API_KEY` is unset and the provider is `openai`. |
+| `EXTRACTION_PROVIDER` | no | `openai` (Responses API) or `openrouter` (OpenAI-compatible Chat Completions). Defaults to `openai`. |
+| `EXTRACTION_API_KEY` | no | The extraction key, whichever provider is selected. Falls back to `OPENAI_API_KEY` / `OPENROUTER_API_KEY`. |
+| `EXTRACTION_MODEL` | no | Ingestion model id; defaults to `gpt-5-mini` (what the committed accuracy run used) **for `openai` only**. `openrouter` has no default and requires this — a guessed model id spends money on the wrong model. |
+| `EXTRACTION_BASE_URL` | no | Override the provider's API root, no trailing slash. Defaults to `https://api.openai.com/v1` / `https://openrouter.ai/api/v1`. |
+| `EXTRACTION_OUTPUT_MODE` | no | `json_schema` (a `response_format`) or `tool_call` (a forced `record_extraction` function call whose parameters are the schema). Defaults to `json_schema` for `openai`, `tool_call` for `openrouter` — which accepts `response_format` without enforcing it. Every payload is validated here with zod either way. |
+| `EXTRACTION_VISION` | no | `false` for a text-only model. Defaults to true. An image submitted while this is false is a loud error, never a silently caption-only extraction. |
+| `EXTRACTION_TIMEOUT_MS` | no | Per-request abort timeout, default `60000`. Three attempts are made on 429/5xx, honouring a small `Retry-After`. |
+| `OPENROUTER_API_KEY` | no | Fallback key when the provider is `openrouter`. |
+| `OPENROUTER_SITE_URL` | no | Sent to OpenRouter as `HTTP-Referer` (attribution only). |
+| `OPENROUTER_APP_NAME` | no | Sent to OpenRouter as `X-Title` (attribution only). |
 | `MERCHANT_TOKEN` | no | The Merchant's bearer token for the merchant face. Unset, `npm run seed` mints one (`mrc_tok_…`) and prints it exactly once; set it to keep a token stable across redeploys of a fresh database. An already-minted token is never rotated, so setting this afterwards has no effect. |
 
 The server validates all of these at startup and names every missing one at once.
