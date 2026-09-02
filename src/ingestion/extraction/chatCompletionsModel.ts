@@ -34,8 +34,18 @@ const TOOL_NAME = 'record_extraction';
 /** The `json_schema`-mode schema name. Same one the Responses adapter sends. */
 const SCHEMA_NAME = 'product_extraction';
 
-/** Generous: truncation shows up as `finish_reason: 'length'`, not bad JSON. */
-const MAX_TOKENS = 4000;
+/**
+ * Generous: truncation shows up as `finish_reason: 'length'`, not bad JSON.
+ *
+ * Raised from 4000 in S2.3, on evidence: GLM-5.3-Flash in `json_schema` mode
+ * hit 4000 on item 23 of the 28-item demo dataset — the one with a full
+ * per-variant stock split — and killed a run that had already made 22 live
+ * calls. The payload itself is ~400 tokens; what fills the budget is the
+ * model's own preamble before the constrained object, which is per-model
+ * behaviour we do not control. The cap exists to stop a runaway, not to size
+ * the answer, so it is set well clear of any payload this schema can produce.
+ */
+const MAX_TOKENS = 12_000;
 
 export interface ChatCompletionsExtractionModelOptions {
   readonly config: ExtractionProviderConfig;

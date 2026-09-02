@@ -34,11 +34,59 @@ The photos are generated (see below) and were always going to be.
   item. No ground-truth label, not scored, deliberately outside `dataset.json` so the
   committed accuracy numbers stay about the 28. See its own README for why it is worded the
   way it is.
-- `runs/<model>.json` — committed accuracy runs, written by `npm run ingest:accuracy`
+- `runs/<model>.json` (OpenAI) / `runs/<provider>-<model>-<outputMode>.json`
+  (everything else) — committed accuracy runs, written by `npm run ingest:accuracy`
   (T12): per-field scores vs these labels, every raw model response, the threshold sweep
   `AUTO_PUBLISH_THRESHOLD` is tuned on, and what the lifecycle gate published vs held.
   Same argument as the spike's `runs/`: every accuracy number the repo claims is read off
   a committed record, and `src/ingestion/demoRun.test.ts` pins it in CI.
+
+## Model comparison (S2.3, 2026-09-03)
+
+Which model runs extraction in the demo was decided by measurement, not by
+preference. Every number below is read off a committed record in `runs/`;
+reproduce the table with `npm run ingest:compare`.
+
+**The ranking rule, in order:** `publishedWithWrongField` must be empty first —
+a model that auto-publishes a field the hand labels call wrong is disqualified
+however good its averages look — then per-field accuracy, then latency.
+
+```
+model               provider    mode         name  price  stock  variantLabels  descriptionPresence  variantStock  pub/held  wrongPublished  elapsed
+------------------  ----------  -----------  ----  -----  -----  -------------  -------------------  ------------  --------  --------------  -------
+gpt-5-mini          openai      json_schema  96%   100%   100%   100%           100%                 100%          3/25      0               169s
+z-ai/glm-5.3-flash  openrouter  tool_call    93%   100%   96%    100%           100%                 100%          2/26      1               239s
+```
+
+Four OpenRouter runs were planned (two models × two output modes). Two of them
+produced no record, and that is a result, not a gap:
+
+| run | outcome |
+|---|---|
+| `z-ai/glm-5.3-flash` × `tool_call` | **completed**, record committed. Meets the 70% floor on every reportable field — and **disqualified**: it auto-published `23-machli-mesh-shorts` with a product stock of 13, the sum of the per-variant split `{S: 4, M: 7, L: 2}` that the caption never totals, at confidence 0.90. An invented number in the one column checkout trusts. |
+| `z-ai/glm-5.3-flash` × `json_schema` | **no record.** Three attempts, each reaching item 23 of 28 and stopping there: once on the adapter's token cap, twice on a request timeout at 120 s and 300 s. Same item, same model, same mode. |
+| `minimax/minimax-m3:free` × `tool_call` | **no record.** Failed on item 1: `variantLabels` came back as a bare `["S","M",…]` instead of `{value, confidence}`, under a *forced, strict* tool call. |
+| `minimax/minimax-m3:free` × `json_schema` | **no record.** Failed on item 1: the object arrived wrapped in a markdown fence, under a `response_format` that is supposed to make that impossible. |
+
+MiniMax was dropped after 4 smoke requests rather than 56 billed ones — that is
+what `npm run ingest:smoke -- --items=3` exists for. The mechanism behind both
+of its failures, and behind the timing traps above, is in
+`docs/engineering-log.md` under `2026-09-03 — S2.3`.
+
+**The finding.** No OpenRouter configuration currently clears the first rule.
+The only record in this directory with `publishedWithWrongField = []` is
+`gpt-5-mini.json`, and that key is out of credits. The choice between topping it
+up and shipping GLM `tool_call` with a known-bad item is the owner's; the
+numbers for it are here.
+
+**Two things this table is evidence *for*, beyond the ranking.** OpenRouter
+forwards `response_format` and `strict: true` and enforces neither — GLM
+honoured both through the same adapter and the same bytes that MiniMax ignored
+— so our zod validation is not a second line of defence behind a provider
+guarantee, it is the only guarantee (`DECISIONS.md`, 2026-09-03). And the
+per-field `{value, confidence}` envelope is what made MiniMax's drift *loud*: a
+bare `variantLabels: string[]` schema would have accepted that payload and put
+an unconfirmed size list into the catalog.
 
 ## Label schema
 

@@ -8,8 +8,10 @@ import {
   thresholdSweep,
 } from './accuracy.js';
 import { DEMO_DATASET_DIR, loadDemoDataset, loadDemoImage } from './demoDataset.js';
-import { createExtractionModel } from './extractionModel.js';
+import { readExtractionProviderConfig } from './extraction/config.js';
+import { createExtractionModelFromConfig } from './extractionModel.js';
 import { type AssembledProduct, AUTO_PUBLISH_THRESHOLD, assembleProduct } from './pipeline.js';
+import { runRecordFileName } from './runRecord.js';
 
 /**
  * The reportable per-field accuracy run (issue #13): the real extraction model
@@ -20,11 +22,18 @@ import { type AssembledProduct, AUTO_PUBLISH_THRESHOLD, assembleProduct } from '
  *   npm run ingest:accuracy                                        # default model
  *   EXTRACTION_MODEL=gpt-5 npm run ingest:accuracy                 # the step-up, config only
  *   npm run ingest:accuracy -- --out=fixtures/demo-dataset/runs/x.json
+ *   EXTRACTION_PROVIDER=openrouter EXTRACTION_MODEL=z-ai/glm-5.3-flash \
+ *     EXTRACTION_OUTPUT_MODE=tool_call npm run ingest:accuracy
  *
  * By default the record lands at `fixtures/demo-dataset/runs/<model>.json`
- * and is committed, like the spike's runs: every accuracy number the repo
+ * for OpenAI and `runs/<provider>-<slug(model)>.json` for every other
+ * provider (`runRecord.ts`), and carries the provider and output mode it ran
+ * under — two runs of the same model in the two output modes are two
+ * different measurements and must not overwrite each other.
+ *
+ * Records are committed, like the spike's runs: every accuracy number the repo
  * claims is read off a committed record, raw model output included, not taken
- * on trust. `demoRun.test.ts` then pins the committed record in CI.
+ * on trust. `demoRun.test.ts` then pins the OpenAI record in CI.
  *
  * A script, not a test — live billed calls, ~28 items of them (same argument
  * as the spike runner; the scoring itself is unit-tested in
@@ -57,13 +66,14 @@ function reportItem(score: DemoItemScore, assembled: AssembledProduct): void {
 
 async function run(): Promise<void> {
   const dataset = await loadDemoDataset();
-  const model = createExtractionModel();
+  const config = readExtractionProviderConfig();
+  const model = createExtractionModelFromConfig(config);
   const out =
     parseOutPath(process.argv.slice(2)) ??
-    resolve(DEMO_DATASET_DIR, 'runs', `${model.modelId}.json`);
+    resolve(DEMO_DATASET_DIR, 'runs', runRecordFileName(config));
 
   console.log('T12 — per-field extraction accuracy vs hand labels');
-  console.log(`  model:     ${model.modelId}`);
+  console.log(`  model:     ${model.modelId}  (${config.provider}, ${config.outputMode})`);
   console.log(`  dataset:   ${String(dataset.items.length)} items, merchant "${dataset.merchant}"`);
   console.log(`  floor:     ${pct(FLOOR)} per reportable field`);
   console.log(`  threshold: ${AUTO_PUBLISH_THRESHOLD.toFixed(2)} (auto-publish)`);
@@ -126,6 +136,8 @@ async function run(): Promise<void> {
 
   const record = {
     model: model.modelId,
+    provider: config.provider,
+    outputMode: config.outputMode,
     ranAt: startedAt.toISOString(),
     elapsedSeconds,
     accuracyFloor: FLOOR,
