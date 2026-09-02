@@ -1,0 +1,47 @@
+name: ci
+
+# The merge gate. Every PR and every push to main must typecheck and pass the
+# vitest suite — integration tests run on embedded PGlite, so no database, no
+# secrets, no network (vitest.config.ts). Nothing else runs here: the live
+# evals, accuracy runs and rehearsals are billed or rate-limited and stay
+# manual by design.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # The lockfile is written by npm 10.9.3 (package.json → packageManager).
+      # A newer npm rewrites it silently (engineering log → Toolchain), so the
+      # pinned version does the install here too.
+      - name: Install (npm 10.9.3, lockfile-exact)
+        run: npx --yes npm@10.9.3 ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Typecheck viewer
+        run: npm run typecheck:viewer
+
+      - name: Test
+        run: npm test
