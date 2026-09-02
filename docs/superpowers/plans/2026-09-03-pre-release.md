@@ -92,6 +92,7 @@ Blocked by: S1.3.
 
 ### S1.5 Merchant reads — `store_summary`, `list_recent_orders`, `get_order`
 Blocked by: S1.2.
+Landed: PR #51, 2026-09-03
 - [x] `store_summary({merchantToken})`: published/held counts; orders by status; revenue paise today/total; low-stock Variants (≤ 2); sold-out Variants; recent Refusals as unmet demand (count + last 5 reasons). Reuse `listPublishedVariants`, `listRecentOrders`, `listRecentRefusals`; one aggregate query for the counts.
 - [x] `list_recent_orders({merchantToken, limit?})`: id, status, amount paise, variant labels, receipt id, created at — via `listRecentOrders`.
 - [x] `get_order({merchantToken, orderId})`: `findOrderById` + `readPurchaseAuditChain` — the same data `/viewer/orders/:id` shows; unknown id → `PRODUCT_NOT_FOUND`-style validationError (`ORDER_NOT_FOUND`).
