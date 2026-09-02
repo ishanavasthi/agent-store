@@ -4,7 +4,7 @@
 
 **Status:** grilled and agreed 2026-09-03 (owner: Ishan). Ship: build Sep 3, record + submit Sep 4, Sep 5 slack. Applications close Sep 5.
 
-**Spec + tickets:** GitHub issues (spec `#TBD`, tickets `#TBD`) — see the Tickets table at the end.
+**Spec + tickets:** spec #36; tickets #37–#44 (table at the end). Step 0 PR: #35.
 
 ## 1. Why
 
@@ -152,7 +152,7 @@ WS2:  S2.1 ─► S2.2 ─► S2.3
 
 **Trigger for the fresh session** — paste:
 
-> `/spawn-agent` — implement the pre-release tickets in `docs/superpowers/plans/2026-09-03-pre-release.md` §7 as two Orca-worktree chains (WS1: S1.1→S1.2→S1.3→S1.4, S1.5 after S1.2; WS2: S2.1→S2.2→S2.3), one terminal per ticket, using the worker contract in §7; coordinate with the `orchestration` skill: merge only green PRs, rebase WS2 after S1.3.
+> `/spawn-agent` — implement the pre-release tickets in `docs/superpowers/plans/2026-09-03-pre-release.md` §7 as two Orca-worktree chains (WS1: #37→#39→#41→#43, #42 after #39; WS2: #38→#40→#44), one terminal per ticket, using the worker contract in §7; coordinate with the `orchestration` skill: merge only green PRs, rebase WS2 after S1.3.
 
 Fallback without Orca: `Agent` with `isolation: "worktree"`, same contract, coordinator in-session.
 
@@ -182,11 +182,11 @@ Fallback without Orca: `Agent` with `isolation: "worktree"`, same contract, coor
 
 | Ticket | Issue | Stream | Blocked by |
 |---|---|---|---|
-| S1.1 Merchant token | #TBD | WS1 | — |
-| S1.2 Merchant face skeleton | #TBD | WS1 | S1.1 |
-| S1.3 `submit_catalog_item` | #TBD | WS1 | S1.2 |
-| S1.4 Demo images, docs, ADR-0005 | #TBD | WS1 | S1.3 |
-| S1.5 Merchant reads | #TBD | WS1 | S1.2 |
-| S2.1 Zod payload + golden | #TBD | WS2 | — |
-| S2.2 Provider config + Chat Completions | #TBD | WS2 | S2.1 |
-| S2.3 Live runs + scripts | #TBD | WS2 | S2.2 |
+| S1.1 Merchant token | #37 | WS1 | — |
+| S1.2 Merchant face skeleton | #39 | WS1 | #37 |
+| S1.3 `submit_catalog_item` | #41 | WS1 | #39 |
+| S1.4 Demo images, docs, ADR-0005 | #43 | WS1 | #41 |
+| S1.5 Merchant reads | #42 | WS1 | #39 |
+| S2.1 Zod payload + golden | #38 | WS2 | — |
+| S2.2 Provider config + Chat Completions | #40 | WS2 | #38 |
+| S2.3 Live runs + scripts | #44 | WS2 | #40 |
