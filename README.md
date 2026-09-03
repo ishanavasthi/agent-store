@@ -1,21 +1,20 @@
 # agent-store
 
-Merchant-side agentic commerce infrastructure for India's long-tail sellers: take a
-merchant's messy real-world catalog and make them transactable by AI buyer agents, with
-every money action explainable, bounded, and gated.
+**Merchant-side agentic commerce infrastructure for India's long-tail sellers.** Turns a
+merchant's messy real-world catalog — Instagram photos, Hinglish captions, broken price
+formats — into something an AI buyer agent can actually buy from, with every money action
+explainable, bounded and gated.
 
-Domain vocabulary is canonical in [`CONTEXT.md`](CONTEXT.md); the plan and milestones are
-in [`PLAN.md`](PLAN.md); deep decisions are in [`docs/adr/`](docs/adr/) and the running
-design log is [`DECISIONS.md`](DECISIONS.md). What broke and what to not walk into twice is
-in [`docs/engineering-log.md`](docs/engineering-log.md); the live-eval procedure is in
-[`docs/live-evals.md`](docs/live-evals.md).
+**Live:** <https://agent-store-production-8345.up.railway.app> · **Audit viewer:**
+[`/viewer`](https://agent-store-production-8345.up.railway.app/viewer) · **Discovery doc:**
+[`/.well-known/agent-store.json`](https://agent-store-production-8345.up.railway.app/.well-known/agent-store.json)
 
 > **Test mode, permanently.** This project never touches live payment credentials. The
 > server refuses to start on anything but a `rzp_test_…` key.
 
 ---
 
-## The problem, in one paragraph
+## The problem
 
 India's payment rails are becoming agent-ready — UPI Reserve Pay lets a human pre-authorise
 an agent to spend, and NPCI has signalled an agentic payments layer. But an AI shopping
@@ -24,7 +23,7 @@ catalog, no stock or price API, and no protocol endpoint**. Their catalog is a s
 Instagram photos with Hinglish captions. agent-store is the missing merchant side: it turns
 that messy catalog into something an AI agent can actually buy from — safely.
 
-## What it does, in plain language
+## How it works
 
 **1. A merchant adds a product by pasting their own caption.** No forms, no spreadsheet.
 They talk to Claude, drop in an Instagram screenshot, and the server reads the caption and
@@ -65,7 +64,7 @@ sequence — never by timestamp.
 
 ![The audit ledger listing Orders and Refusals](docs/screenshots/viewer-ledger.png)
 
-## How it fits together
+## Architecture
 
 ```mermaid
 flowchart TB
@@ -109,22 +108,53 @@ runs server-side even when the request arrives from a chat client, so a connecto
 hand over a pre-extracted price at confidence 1.0. Every trust check runs *before* any gateway
 call, so a refusal always means zero money moved.
 
-## Feature map
+## Features
 
-| Feature | What it means | Where |
-|---|---|---|
-| **Two separate protocol faces** | A buyer literally cannot see a tool that edits the catalog — separate endpoint, separate tool set, separate identity. | `/mcp` (6 tools) · `/merchant/mcp` (8 tools) |
-| **Add a product from chat** | Paste a caption; the server extracts, scores its own confidence, and publishes or holds. | `submit_catalog_item` |
-| **The confidence gate** | Below 0.90 on any field the whole Product holds. Stock is *never* invented. | `/viewer/confirm`, `confirm_product` |
-| **Provider-agnostic extraction** | OpenAI Responses API or any OpenAI-compatible Chat Completions provider, chosen by env var. Our zod schema is the guarantee — not the provider's promise. | `EXTRACTION_PROVIDER` |
-| **Signed mandate chain** | Intent → Cart → Payment, each signed by both sides, price pinned by hash. A stale cart refuses `PRICE_CHANGED`. | `declare_intent` → `create_cart` → `submit_payment` |
-| **Bounded spending** | Per-agent Cap at registration, per-purchase Budget at intent. Over either one is a structured Refusal. | `register_agent` |
-| **Real rails** | Razorpay test mode, signature-verified webhooks, idempotent money actions. | `/webhooks/razorpay` |
-| **Fails closed** | A decline retries exactly once then cancels with zero charge. An oversell found after capture refunds automatically with a signed refund receipt. | `npm run failure:decline`, `failure:oversell` |
-| **Replayable audit** | Every decision, in order, in a browser — with plain-English reasons. | `/viewer` |
-| **Independent auditor** | Recomputes the ledger from scratch and reports violations. Grading our own homework, checkably. | `npm run audit:rules` |
+### Merchant side — getting a catalog in
 
-## Try it in five minutes
+| | |
+|---|---|
+| **Add a product from a chat message** | Paste the caption you already wrote. `submit_catalog_item` on `/merchant/mcp` runs the same pipeline the batch importer uses. Optionally attach a public photo URL or inline base64. |
+| **Extraction runs server-side, always** | A chat client sends the caption **verbatim** and nothing else. It cannot hand over a pre-extracted price at confidence 1.0, which is the failure mode that would make the whole confidence model meaningless. |
+| **Per-field confidence with a hard gate** | Every field carries the model's own score. Anything below **0.90** holds the *entire* Product in `needs_confirmation` — not just that field — so a Variant can never be bought at a price nobody verified. |
+| **Stock is never invented** | Captions almost never state stock. The pipeline returns `null` at confidence `0.00` rather than guessing, and refuses to publish without a stated count. `0` means sold out; absent means unknown. |
+| **Confirm in chat or on the web** | `confirm_product` answers the held fields in the next chat turn; `/viewer/confirm` is the batch screen. The chat path is **additive** — a Variant you do not mention keeps its stored values and is never deleted. |
+| **Run the store from chat** | `store_summary` (published/held counts, Orders by status, revenue in paise, low stock, sold out, Refusals as unmet demand), `list_recent_orders`, `get_order`. |
+| **Deterministic price parsing** | `₹499/- only`, `sirf 699`, `Rs.999`, `1,599 flat`, MRP strikethroughs and %-off lines are parsed by code, not by the model. Numbers that are not prices (free-shipping thresholds, COD limits) are rejected. |
+
+### Buyer side — the purchase
+
+| | |
+|---|---|
+| **Two protocol faces, one core** | MCP (`/mcp`, Streamable HTTP, stateless) and an ACP-flavoured REST twin (`/acp/*`) with identical semantics, Refusals and Receipts. A `/.well-known` discovery doc describes both. |
+| **Signed mandate chain** | Not a single `checkout` call. `declare_intent` (want + Budget) → `create_cart` (immutable, both sides signed, price pinned by hash) → `submit_payment`. A cart made stale by a price change refuses `PRICE_CHANGED`. |
+| **Bounded spending** | A **Cap** declared per agent at registration and a **Budget** per purchase. Exceeding either is a structured Refusal, before any gateway call. |
+| **Custody that matches the client** | A connector-based agent cannot hold a private key, so the server signs custodially; an Agent-SDK buyer signs locally. Both produce the same verifiable chain. |
+| **Idempotent money actions** | The buyer mints the idempotency key; replaying a `submit_payment` cannot double-charge. |
+| **Real rails** | Razorpay test mode, signature-verified webhooks, payment link as the human consent step. |
+
+### Trust and audit
+
+| | |
+|---|---|
+| **Every check runs before the gateway** | A Refusal therefore always means **zero money moved** — that is a structural property, not a promise. |
+| **Written before it happens** | The outbound call is recorded as `*_attempted` *before* it is made, so a crash mid-request leaves a trace rather than a silence. |
+| **Append-only, hash-chained audit log** | Every decision in the log's own sequence, never by timestamp. Replayable per Order and per Refusal. |
+| **Fails closed** | A decline retries exactly once, then the Order cancels with zero charge. An oversell discovered *after* capture refunds automatically and issues a merchant-signed refund receipt. |
+| **Independently re-checked** | `npm run audit:rules` recomputes the ledger from the audit log alone and reports violations — the project does not grade its own homework. |
+| **Merchant-signed Receipts** | Bind the Intent, Cart and Payment hashes to the gateway charge, so a third party can verify the chain led to that amount. |
+
+### Extraction layer
+
+| | |
+|---|---|
+| **Provider-agnostic** | OpenAI Responses API, or any OpenAI-compatible Chat Completions provider (OpenRouter), selected entirely by environment variables — no code change to switch. |
+| **Our schema is the guarantee** | Providers *accept* `response_format` without necessarily enforcing it. Every payload is validated against a zod schema before it is consumed, and the JSON schema sent on the wire is derived from that same zod schema and pinned by test. |
+| **Two output modes** | `json_schema`, or a forced `tool_call` whose arguments are the schema — the best available approximation of strict mode on providers that do not enforce it. |
+| **Bounded and honest under load** | Per-request timeout, three attempts on 429/5xx honouring `Retry-After`; a rate-limited provider degrades to "retry in N seconds" rather than hanging. |
+| **Measured, with the numbers published** | 28 hand-labelled captions, per-field accuracy, and the run records committed in [`fixtures/demo-dataset/`](fixtures/demo-dataset/). |
+
+## Try it now
 
 The deployment is live and needs no setup:
 
@@ -144,25 +174,23 @@ custom connector (no auth) — see [Connecting a Claude client](#connecting-a-cl
 
 ---
 
-## What exists today
+## Protocol surfaces
 
-Everything below is merged on `main` and deployed. A buyer agent connected over MCP (or
-the REST twin) registers, declares an Intent, gets an immutable Cart mandate back, and pays
-for it on real Razorpay test-mode rails — with every step signed, bounded by a Cap and a
-Budget, and written to an append-only audit log a separate auditor re-checks.
+Three faces over one core. A buyer never sees a tool that edits the catalog, and a merchant
+never sees a tool that spends money.
 
 | Surface | What it does |
 |---|---|
 | `POST /mcp` | Authless MCP (Streamable HTTP, stateless). Six tools: `get_product`, `register_agent`, `declare_intent`, `create_cart`, `submit_payment`, `get_order_status`. |
-| `POST /merchant/mcp` | The Merchant face: a *separate* authless MCP endpoint with its own tool set, so a buyer never sees a tool that edits the catalog. `submit_catalog_item` (S1.3) adds a Product from a caption (plus an optional public photo URL or inline base64): **extraction always runs server-side** through the same pipeline `ingest:demo` uses, so the connector never sends extracted fields — it sends the caption verbatim. `list_held_products`, `get_held_product`, `confirm_product`, `list_my_products` (S1.2) work the confirmation queue, and `store_summary`, `list_recent_orders`, `get_order` (S1.5) read the store. Every tool takes `merchantToken` (`MERCHANT_TOKEN`) and refuses `UNKNOWN_MERCHANT_TOKEN` without a valid one. `confirm_product` is additive: it overlays what the merchant said onto the stored draft and calls the same publish gate the web confirmation screen does, and never deletes a Variant. Without an extraction model configured that one tool answers `EXTRACTION_NOT_CONFIGURED`; the server still boots and serves its catalog. See [ADR-0005](docs/adr/0005-merchant-identity-in-protocol-on-a-separate-face.md). |
+| `POST /merchant/mcp` | The Merchant face: a *separate* authless MCP endpoint with its own tool set, so a buyer never sees a tool that edits the catalog. `submit_catalog_item` adds a Product from a caption (plus an optional public photo URL or inline base64): **extraction always runs server-side** through the same pipeline `ingest:demo` uses, so the connector never sends extracted fields — it sends the caption verbatim. `list_held_products`, `get_held_product`, `confirm_product`, `list_my_products` work the confirmation queue, and `store_summary`, `list_recent_orders`, `get_order` read the store. Every tool takes `merchantToken` (`MERCHANT_TOKEN`) and refuses `UNKNOWN_MERCHANT_TOKEN` without a valid one. `confirm_product` is additive: it overlays what the merchant said onto the stored draft and calls the same publish gate the web confirmation screen does, and never deletes a Variant. Without an extraction model configured that one tool answers `EXTRACTION_NOT_CONFIGURED`; the server still boots and serves its catalog. See [ADR-0005](docs/adr/0005-merchant-identity-in-protocol-on-a-separate-face.md). |
 | `GET /.well-known/agent-store.json` | Discovery doc describing both protocol faces: the MCP endpoint and the REST base + endpoints, auth model, money conventions, failure shapes. |
-| `/acp/*` | The ACP-flavored REST twin (T14): `GET /acp/products`, `POST /acp/agents`, `POST /acp/intents`, `POST /acp/carts`, `POST /acp/payments`, `GET /acp/orders/:orderId` — the same core and trust layer as MCP, `Authorization: Bearer <agentToken>`. Refusals and Receipts are identical in shape on both faces. |
+| `/acp/*` | The ACP-flavoured REST twin: `GET /acp/products`, `POST /acp/agents`, `POST /acp/intents`, `POST /acp/carts`, `POST /acp/payments`, `GET /acp/orders/:orderId` — the same core and trust layer as MCP, `Authorization: Bearer <agentToken>`. Refusals and Receipts are identical in shape on both faces. |
 | `POST /webhooks/razorpay` | Verifies the Razorpay webhook signature, then flips the domain Order to `paid` — or writes an anomaly and leaves it alone. |
 | `GET /audit`, `/audit/:orderId`, `/audit/refusals/:seq` | The audit directory, one Order's ordered event chain, and a standalone Refusal (addressed by audit `seq`, since a Refusal has no Order), as JSON. |
-| `/viewer/*` | The React ledger SPA (T7, T13) over those endpoints: directory, Order timeline, Refusal timeline, and the merchant confirmation queue at `/viewer/confirm`. |
-| `/merchant/confirmations` | The confirmation screen's API (T13): the worklist of Products held in `needs-confirmation`, and the publish-on-confirm write. Every publish decision is made server-side, so a client speaking raw HTTP meets the same wall as the UI. |
+| `/viewer/*` | The React ledger SPA over those endpoints: directory, Order timeline, Refusal timeline, and the merchant confirmation queue at `/viewer/confirm`. |
+| `/merchant/confirmations` | The confirmation screen's API: the worklist of Products held in `needs-confirmation`, and the publish-on-confirm write. Every publish decision is made server-side, so a client speaking raw HTTP meets the same wall as the UI. |
 | `GET /payment-callback` | Where Razorpay returns the human's browser after they approve. Cosmetic — the webhook is what marks the Order paid. |
-| `GET /demo/images/<file>.jpg` | The demo dataset's product photos, served straight from `fixtures/demo-dataset/images` with a one-hour `Cache-Control` (S1.4). The repository is private, so this deployment is the only public origin those photos have — which is what makes `submit_catalog_item`'s `imageUrl` demonstrable. A missing file is a 404, never the viewer SPA. |
+| `GET /demo/images/<file>.jpg` | The demo dataset's product photos, served straight from `fixtures/demo-dataset/images` with a one-hour `Cache-Control`. The repository is private, so this deployment is the only public origin those photos have — which is what makes `submit_catalog_item`'s `imageUrl` demonstrable. A missing file is a 404, never the viewer SPA. |
 | `GET /healthz` | Health check; also the keep-warm ping target. |
 
 The flow the mandate chain drives:
@@ -195,14 +223,14 @@ original attempt plus exactly one bounded retry, then the Order fails closed to 
 zero charge) and an **Oversell** (a stock shortfall found at fulfilment, *after* capture →
 automatic refund, merchant-signed Refund receipt, terminal `refunded`).
 
-Catalog comes from the ingestion pipeline (T12): merchant photo captions in → per-field
+Catalog comes from the ingestion pipeline: merchant photo captions in → per-field
 confidence out → fields at or above the auto-publish threshold (0.90) publish themselves,
 anything below holds the *whole* Product in `needs-confirmation` until the merchant approves
 or corrects it on `/viewer/confirm`. The deployed demo catalog is 29 Products / 92 Variants,
 ₹299–₹3,799, ingested from the 28-caption demo dataset plus the seeded walking-skeleton
 product.
 
-### What's worth knowing about the code
+## Design notes
 
 **Money is integer paise, INR only.** `src/domain/money.ts` is the only place amounts are
 constructed. Formatting is one-way and parsing is explicit and fallible, so no float can
@@ -213,7 +241,7 @@ unconverted and there is no rounding step to get wrong.
 `Transaction`, not any database handle — writing an audit event outside a transaction is a
 type error, not a code-review finding. Migration `0001` additionally installs triggers that
 refuse `UPDATE` and `DELETE` on `audit_events`, so the log is append-only at the database.
-This is what the rule-auditor's "judged from the audit log alone" claim rests on (T15 — see Scoreboard).
+This is what the rule-auditor's "judged from the audit log alone" claim rests on — see [Scoreboard](#scoreboard).
 
 **The gateway sits behind an interface.** `src/gateway/types.ts` defines `PaymentGateway`;
 `razorpayGateway.ts` is the only file in the repo that imports the `razorpay` package. The
@@ -274,26 +302,6 @@ A malformed argument is a plain **validation error** with a deliberately differe
 confuse the two categories. A gateway **Decline** is a third thing again and lives on the
 webhook path. See `src/domain/refusal.ts` and CONTEXT.md → Failure vocabulary.
 
-### Where the build stands
-
-Milestones are in [`PLAN.md`](PLAN.md) §8; each one's recorded check result lives there.
-
-| | |
-|---|---|
-| **M1** walking skeleton, deployed | done |
-| **M2** trust layer — registration, mandate chain, Cap/Budget, idempotency, price-hash pinning, Receipts | done |
-| **M3** audit-trail viewer | done |
-| **M4** ingestion + demo dataset + confirmation screen + measured accuracy | done |
-| **M5** rehearsed failures | scripted halves done (`npm run failure:decline`, `npm run failure:oversell`); the real-rails takes (a live `failure@razorpay` decline; the refund visible in the Razorpay dashboard) are manual and not yet recorded |
-| **M6** eval harness | scripted suite done (30/30, auditor clean — see Scoreboard). The live suite's harness is merged and the committed report holds 3 real runs from 2026-08-27; those predate the payer-bot fix and the full catalog, so re-running them is the open item |
-| **M7** release — demo video, public repo | not started |
-
-Deliberately not built, and not planned for v1: WhatsApp price-list ingestion (schedule-gated
-secondary format), a second demo merchant, and the upsell tool — the top of `PLAN.md` §9's
-de-scope ladder. The rest of the cut list is in "What v1 does not do" below.
-
----
-
 ## Scoreboard
 
 Produced by `npm run evals` — the 30-scenario scripted protocol suite plus the
@@ -314,7 +322,7 @@ time with `npm run audit:rules`. Re-running `npm run evals` reproduces all of it
 ### Methodology — which numbers come from the stub, which from real rails
 
 **From the stub (deterministic):** the 30 scripted scenarios and everything in the
-table above. They run against `StubGateway` (PLAN §5.4) on an embedded PGlite
+table above. They run against `StubGateway` on an embedded PGlite
 Postgres carrying the real committed migrations — no network, no credentials, byte-stable
 across runs, which is what makes the suite CI-runnable and the only way to trigger a
 gateway decline programmatically (test mode has no API-driven payment completion). The
@@ -336,8 +344,8 @@ their report says so — nothing in the table above comes from them.
 *payer-bot* at Razorpay's hosted page, and two reasoned walk-aways against what was then a
 3-product catalog. The payer-bot has since been fixed (it drives mobile checkout and pays
 via the UPI intent tile) and verified to complete a real purchase end to end against
-production; re-running the batch on the full catalog is the open M6 item. The S1 spike
-(PLAN §7) separately verified two complete purchases end-to-end on real test rails.
+production; re-running the batch on the full catalog is the one open item in this row. An earlier
+spike separately verified two complete purchases end to end on real test rails.
 
 **Extraction accuracy** is measured against hand labels written before any model ran and
 [published in this repo](fixtures/demo-dataset/) — the graded answers are public, so the
@@ -440,7 +448,7 @@ harness rather than mocked here — see `PLAN.md` §6 and the Scoreboard above.
 | `MERCHANT_TOKEN` | no | The Merchant's bearer token for the merchant face. Unset, `npm run seed` mints one (`mrc_tok_…`) and prints it exactly once; set it to keep a token stable across redeploys of a fresh database. An already-minted token is never rotated, so setting this afterwards has no effect. |
 
 The server validates all of these at startup and names every missing one at once. The
-`EXTRACTION_*` group is the exception: extraction is optional at boot (S1.3), so with none of
+`EXTRACTION_*` group is the exception: extraction is optional at boot , so with none of
 it configured the server starts and serves its catalog normally, logs `extraction disabled`,
 and only `submit_catalog_item` refuses — `EXTRACTION_NOT_CONFIGURED`.
 
@@ -609,6 +617,20 @@ Written down so the scope is legible rather than implied (`PLAN.md` §10):
 - **No ONDC schema**, no WhatsApp price-list ingestion, no upsell tool, no second merchant.
 
 ---
+
+## Documentation
+
+The README is the overview; the detail lives beside the code.
+
+| | |
+|---|---|
+| [`CONTEXT.md`](CONTEXT.md) | The domain vocabulary — Agent, Variant, Budget vs Cap, Refusal vs Decline, Oversell, Receipt. Canonical: the code uses these words and only these. |
+| [`docs/adr/`](docs/adr/) | Architecture decisions that were hard to reverse, with their consequences. |
+| [`DECISIONS.md`](DECISIONS.md) | The running design log — every choice not forced by the spec, with what was rejected and why. |
+| [`docs/engineering-log.md`](docs/engineering-log.md) | What broke, the mechanism behind it, and the trap not to walk into twice. |
+| [`fixtures/demo-dataset/`](fixtures/demo-dataset/) | The 28 hand-labelled captions, the published ground truth, and the committed accuracy runs. |
+| [`docs/live-evals.md`](docs/live-evals.md) | How the live buyer runs are performed. |
+| [`PLAN.md`](PLAN.md) | Milestones and build history. |
 
 ## Threat model note
 
