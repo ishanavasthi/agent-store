@@ -1,4 +1,4 @@
-# The 29th caption — TAPRI half-zip (video prop, not dataset)
+# The 29th caption — TAPRI Half-Zip Sweatshirt (video prop, not dataset)
 
 The caption the merchant submits **on camera** in the video's opening take (plan
 `docs/superpowers/plans/2026-09-03-pre-release.md` D14). It lives here, beside the demo
@@ -27,6 +27,13 @@ It has to make the confidence gate **hold the Product on camera**, so the captio
   `confirm_product` publishes it;
 - **offers three sizes** (`S M L`), so the confirmation answer is a short, natural sentence
   rather than a table.
+- **names the product in full** — `TAPRI Half-Zip Sweatshirt`, not `TAPRI half-zip`. This was
+  changed on 2026-09-03 after testing the real beat against the deployment: with the partial
+  name, extraction returned `name` at confidence 0.75–0.80 (below the 0.90 gate) under **every**
+  model tried, so the Product was Held on **two** fields and the scripted "S 4, M 6, L 5" answer
+  no longer covered it. With the full name, `name` comes back at **0.98** and the Product is
+  Held on `stock` alone — which is the beat the plan designed. A partial product name is a
+  legitimate thing for the gate to hold; it just is not the thing this take is about.
 
 It is a new product for the same fictional brand (Kalaakar Streetwear) and repeats none of
 the 28 dataset products, so nothing in the catalog collides with it during the take.

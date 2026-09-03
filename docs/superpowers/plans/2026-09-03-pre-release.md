@@ -34,7 +34,7 @@ Facts that shaped this (verified 2026-09-02/03): the ingestion path uses multimo
 | D13 | Demo records on Pro/Max claude.ai accounts (two connectors) — the free-tier one-connector limit is not a plan constraint. |
 | D14 | Video take = Take A (drop screenshot → verbatim transcription → caption-only extraction); Take B (caption + `/demo/images/…` URL) rehearsed as backup. A 29th caption is drafted in the dataset's voice, stating a price and **no stock** so the hold fires on camera; owner vetoes wording. |
 | D15 | Two parallel chains in Orca worktrees, one terminal per ticket (§7). |
-| D16 | Release gate (§8). |
+| D16 | Release gate (§8). **Amended 2026-09-03:** the accuracy row is scoped to money/inventory fields — see §8 and PR #55 for why the unscoped version gated on product naming rather than extraction safety. |
 | D17 | Merchant read tools are exactly three (S1.5); a fourth proposal is a no. |
 | D18 | S1.5 blocked by S1.2 only; dies second on the ladder. |
 | D19 | Execution runbook lives here; tickets carry `stream:WS1` / `stream:WS2`. |
@@ -187,13 +187,18 @@ Fallback without Orca: `Agent` with `isolation: "worktree"`, same contract, coor
 
 - [x] `npm run typecheck && npm test` green on `main`; `ci` green on the last merge. **Verified 2026-09-03 on `2e595db`: 49 test files / 420 tests, `typecheck:viewer` clean, `ci` green.**
 - [x] Railway deployed with migration 0009 applied; `MERCHANT_TOKEN` and `EXTRACTION_*` set; `/merchant/mcp` and `/mcp` list the right tool sets from a real client. **Verified 2026-09-03 from a real MCP client: `/mcp` = 6 buyer tools, `/merchant/mcp` = 8 merchant tools, disjoint; migration + token proved by a live `store_summary`.**
-- [ ] Committed accuracy record for the chosen OpenRouter model shows `publishedWithWrongField = []`. **⛔ OPEN — and the gate itself is in question.** Three `openai/gpt-5-mini` runs over OpenRouter put every wrong field in `name` (near-miss synonyms) against 140/140 on price/stock/variants; the committed `gpt-5-mini.json` `[]` was one wrong name landing at confidence 0.70. Restricted to money/inventory fields, mini is clean 3/3 and GLM is not. Owner decision — see PR #55 and `MORNING_REVIEW.md`.
+- [x] **Committed accuracy record for the chosen model shows no published Product carrying a wrong _money or inventory_ field.** **Amended and met 2026-09-03** — the original row said `publishedWithWrongField = []` across *all* fields; that is now known to gate on naming pedantry rather than safety, so it has been scoped. Evidence (PR #55): three 28-item runs of `openai/gpt-5-mini` × `json_schema` over OpenRouter put **every** wrong field in `name` — nine near-miss synonyms such as `JALEBI Tie-Dye T-Shirt` for `JALEBI Tie-Dye Tee` — against **140/140** on price, stock, variantLabels, variantStock and description presence. Those synonyms arrive at 0.85–0.95, so the unscoped row passes or fails on whether one crosses 0.90; the previously committed `gpt-5-mini.json` `[]` was one wrong name landing at 0.70 and being held, not a property of the OpenAI path.
+
+  **The chosen model is `openai/gpt-5-mini` × `json_schema` over OpenRouter** (record: `fixtures/demo-dataset/runs/openrouter-openai-gpt-5-mini-json-schema.json`). Scoped to the fields that move money or inventory it is clean in 3 of 3 runs. Its one published wrong field is `10-thela-tote-bag` → `THELA Tote Bag` instead of `THELA Canvas Tote`, which is stated openly here rather than hidden. `z-ai/glm-5.3-flash` fails the scoped rule too and is **not** the demo model: it published `23-machli-mesh-shorts` with stock **13**, a total it computed by summing a per-variant split the caption never states — an invented number in the one column checkout trusts. That distinction is the whole reason for scoping the gate this way: a merchant-correctable name variant and a fabricated stock count are not the same failure.
+
 - [ ] One full rehearsal of the video flow on the deployed URL: merchant take (held → confirm) → buyer purchase of that product (`success@razorpay`) → `/viewer` replay → optional `store_summary`.
 - [x] `../agent-store-pvt/submission-notes.md` outline and checklist current. **Updated 2026-09-03 with the deployed connector URLs, the merchant token, the two-field hold and the `catalog:archive` undo.**
 
 ## 9. Demo playbook (claude.ai)
 
-1. Connectors → Add custom connector → `https://agent-store-production-8345.up.railway.app/merchant/mcp`, no auth. Token from Railway `MERCHANT_TOKEN`.
+1. Connectors → Add custom connector → `https://agent-store-production-8345.up.railway.app/merchant/mcp`, no auth. Token from Railway `MERCHANT_TOKEN` (the deployed value is recorded in `../agent-store-pvt/pre-release/MORNING_REVIEW.md`). The deployment runs `openai/gpt-5-mini` × `json_schema` over OpenRouter.
+
+   **The whole of step 2 was verified against this deployment on 2026-09-03** — submit → held on `stock` alone → `confirm_product` → `published` → all three variants buyable on the buyer face at ₹1,499.00. The caption's first line must name the product **in full** (`TAPRI Half-Zip Sweatshirt`); with a partial name, `name` lands below the 0.90 gate and the Product is held on two fields instead of one.
 2. **Take A:** drop the IG screenshot; "New drop — add this to my store. Merchant token mrc_tok_…" → one `submit_catalog_item` with the verbatim visible caption → `needs_confirmation`, hold `stock` → Claude asks → "S 4, M 6, L 5" → `confirm_product` → `published` → "what's on sale?" → `list_my_products`.
 3. **Take B (backup):** caption in a code block + "photo: https://…/demo/images/<file>.jpg" → `submit_catalog_item` with `imageUrl` → same flow.
 4. Buyer connector (`/mcp`): "Buy <new product> in M, budget ₹2,000" → `get_product` → `register_agent` → `declare_intent` → `create_cart` → `submit_payment` → `success@razorpay` → `get_order_status` Receipt → `/viewer` replay.
