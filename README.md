@@ -5,7 +5,8 @@ merchant's messy real-world catalog — Instagram photos, Hinglish captions, bro
 formats — into something an AI buyer agent can actually buy from, with every money action
 explainable, bounded and gated.
 
-**Live:** <https://agent-store-production-8345.up.railway.app> · **Audit viewer:**
+**Demo video:** [Watch the walkthrough](https://youtu.be/0bqDZ2ffXMs) · **Live:**
+<https://agent-store-production-8345.up.railway.app> · **Audit viewer:**
 [`/viewer`](https://agent-store-production-8345.up.railway.app/viewer) · **Discovery doc:**
 [`/.well-known/agent-store.json`](https://agent-store-production-8345.up.railway.app/.well-known/agent-store.json)
 
@@ -46,16 +47,22 @@ Money is **integer paise, never floats**. Payments settle on **real Razorpay tes
 
 ## See it working
 
+**The full demo — happy purchase, a fail-closed decline, and an oversell caught and refunded.**
+
+[![Watch the agent-store demo](https://img.youtube.com/vi/0bqDZ2ffXMs/maxresdefault.jpg)](https://youtu.be/0bqDZ2ffXMs)
+
 **The confidence gate — an AI-read caption waiting for the one thing it refused to invent.**
 The left column is what extraction read, with the model's own confidence per field; `stock`
 is held at `0.00` because the caption never stated it. Nothing publishes until a human answers.
 
 ![The confirmation desk: what ingestion read, and the one field it held](docs/screenshots/viewer-confirm-product.png)
 
-**A purchase replayed end to end.** Every event in order — the signed Intent, the immutable
-Cart with its price hash, the verified Payment mandate, the Razorpay call recorded *before* it
-was made, the signed webhook, the merchant-signed Receipt, and the atomic stock decrement.
-Green "WHY ALLOWED" boxes explain each gate in English.
+**A purchase replayed from the audit log.** The signed chain, event by event — the Agent's
+signed Intent with its Budget, the immutable Cart with its price locked by hash, the verified
+Payment mandate, and the Order created *only after* the trust gate passed. Green "WHY ALLOWED"
+boxes explain each gate in English. The replay then continues through the Razorpay call recorded
+*before* it was made, the signed webhook, the merchant-signed Receipt, and the atomic stock
+decrement — [see the full replay live](https://agent-store-production-8345.up.railway.app/viewer).
 
 ![An Order replayed event by event in the audit viewer](docs/screenshots/viewer-order-replay.png)
 
