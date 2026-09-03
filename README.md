@@ -15,6 +15,135 @@ in [`docs/engineering-log.md`](docs/engineering-log.md); the live-eval procedure
 
 ---
 
+## The problem, in one paragraph
+
+India's payment rails are becoming agent-ready — UPI Reserve Pay lets a human pre-authorise
+an agent to spend, and NPCI has signalled an agentic payments layer. But an AI shopping
+agent cannot buy from a long-tail merchant, because that merchant has **no machine-readable
+catalog, no stock or price API, and no protocol endpoint**. Their catalog is a stack of
+Instagram photos with Hinglish captions. agent-store is the missing merchant side: it turns
+that messy catalog into something an AI agent can actually buy from — safely.
+
+## What it does, in plain language
+
+**1. A merchant adds a product by pasting their own caption.** No forms, no spreadsheet.
+They talk to Claude, drop in an Instagram screenshot, and the server reads the caption and
+builds the product. Crucially, **the AI never guesses**: it reports a confidence for every
+field, and anything it is not sure about — almost always the stock count, which captions
+rarely state — puts the *whole* product on hold until a human answers. That gate is the
+point, not an inconvenience.
+
+**2. An AI buyer agent can then find and buy that product.** Over MCP (the protocol Claude
+speaks) or a plain REST twin. The purchase is not one "checkout" call — it is a signed chain:
+the agent declares what it wants and a budget, gets back an immutable cart with the price
+locked by hash, and only then can pay. Every step is signed by both sides.
+
+**3. Every rupee is explainable after the fact.** Each decision is written to an append-only
+audit log, and a separate auditor recomputes the whole ledger from scratch to check the
+server did not cheat. You can replay any purchase, event by event, in a browser.
+
+Money is **integer paise, never floats**. Payments settle on **real Razorpay test-mode rails**
+— the server refuses to boot on a live key.
+
+## See it working
+
+**The confidence gate — an AI-read caption waiting for the one thing it refused to invent.**
+The left column is what extraction read, with the model's own confidence per field; `stock`
+is held at `0.00` because the caption never stated it. Nothing publishes until a human answers.
+
+![The confirmation desk: what ingestion read, and the one field it held](docs/screenshots/viewer-confirm-product.png)
+
+**A purchase replayed end to end.** Every event in order — the signed Intent, the immutable
+Cart with its price hash, the verified Payment mandate, the Razorpay call recorded *before* it
+was made, the signed webhook, the merchant-signed Receipt, and the atomic stock decrement.
+Green "WHY ALLOWED" boxes explain each gate in English.
+
+![An Order replayed event by event in the audit viewer](docs/screenshots/viewer-order-replay.png)
+
+**The ledger.** Every Order and every Refusal the trust layer wrote, in the audit log's own
+sequence — never by timestamp.
+
+![The audit ledger listing Orders and Refusals](docs/screenshots/viewer-ledger.png)
+
+## How it fits together
+
+```mermaid
+flowchart TB
+    subgraph merchant["MERCHANT SIDE"]
+        M["Merchant in claude.ai chat<br/>drops an IG screenshot"]
+        MF["POST /merchant/mcp<br/>8 tools, merchantToken"]
+        M -->|"caption, verbatim"| MF
+    end
+
+    subgraph core["THE SERVER — all judgement lives here"]
+        EX["Extraction<br/>provider-agnostic, zod-validated<br/>per-field confidence"]
+        GATE{"confidence >= 0.90<br/>for every field?"}
+        HELD["needs_confirmation<br/>whole Product waits"]
+        CAT[("Catalog<br/>Products / Variants<br/>integer paise")]
+        TRUST["Trust layer<br/>Cap · Budget · price hash<br/>stock · idempotency"]
+        AUDIT[("Append-only audit log<br/>hash-chained")]
+    end
+
+    subgraph buyer["BUYER SIDE"]
+        BF["POST /mcp · 6 tools<br/>+ /acp/* REST twin"]
+        B["AI buyer agent<br/>(claude.ai connector)"]
+        B <--> BF
+    end
+
+    MF --> EX --> GATE
+    GATE -->|"no"| HELD
+    HELD -->|"merchant answers<br/>in chat or on the web desk"| CAT
+    GATE -->|"yes"| CAT
+    BF --> TRUST
+    TRUST --> CAT
+    TRUST -->|"Intent -> Cart -> Payment<br/>each signed"| RZP["Razorpay<br/>test-mode rails"]
+    RZP -->|"signed webhook"| TRUST
+    TRUST --> AUDIT
+    EX --> AUDIT
+    AUDIT --> V["/viewer<br/>replay any Order or Refusal"]
+    AUDIT --> RA["npm run audit:rules<br/>independent re-check"]
+```
+
+The one rule that shapes everything: **the server decides, the client never does.** Extraction
+runs server-side even when the request arrives from a chat client, so a connector can never
+hand over a pre-extracted price at confidence 1.0. Every trust check runs *before* any gateway
+call, so a refusal always means zero money moved.
+
+## Feature map
+
+| Feature | What it means | Where |
+|---|---|---|
+| **Two separate protocol faces** | A buyer literally cannot see a tool that edits the catalog — separate endpoint, separate tool set, separate identity. | `/mcp` (6 tools) · `/merchant/mcp` (8 tools) |
+| **Add a product from chat** | Paste a caption; the server extracts, scores its own confidence, and publishes or holds. | `submit_catalog_item` |
+| **The confidence gate** | Below 0.90 on any field the whole Product holds. Stock is *never* invented. | `/viewer/confirm`, `confirm_product` |
+| **Provider-agnostic extraction** | OpenAI Responses API or any OpenAI-compatible Chat Completions provider, chosen by env var. Our zod schema is the guarantee — not the provider's promise. | `EXTRACTION_PROVIDER` |
+| **Signed mandate chain** | Intent → Cart → Payment, each signed by both sides, price pinned by hash. A stale cart refuses `PRICE_CHANGED`. | `declare_intent` → `create_cart` → `submit_payment` |
+| **Bounded spending** | Per-agent Cap at registration, per-purchase Budget at intent. Over either one is a structured Refusal. | `register_agent` |
+| **Real rails** | Razorpay test mode, signature-verified webhooks, idempotent money actions. | `/webhooks/razorpay` |
+| **Fails closed** | A decline retries exactly once then cancels with zero charge. An oversell found after capture refunds automatically with a signed refund receipt. | `npm run failure:decline`, `failure:oversell` |
+| **Replayable audit** | Every decision, in order, in a browser — with plain-English reasons. | `/viewer` |
+| **Independent auditor** | Recomputes the ledger from scratch and reports violations. Grading our own homework, checkably. | `npm run audit:rules` |
+
+## Try it in five minutes
+
+The deployment is live and needs no setup:
+
+```bash
+# 1. See the catalog an AI buyer sees
+curl -s https://agent-store-production-8345.up.railway.app/acp/products | head -40
+
+# 2. Read the protocol discovery doc
+curl -s https://agent-store-production-8345.up.railway.app/.well-known/agent-store.json
+
+# 3. Replay a real purchase in your browser
+open https://agent-store-production-8345.up.railway.app/viewer
+```
+
+To let Claude buy something, add `https://agent-store-production-8345.up.railway.app/mcp` as a
+custom connector (no auth) — see [Connecting a Claude client](#connecting-a-claude-client).
+
+---
+
 ## What exists today
 
 Everything below is merged on `main` and deployed. A buyer agent connected over MCP (or
