@@ -76,6 +76,33 @@ exact fields the confidence gate reads; MiniMax was dropped under the plan §6
 de-scope ladder (rung 3, "MiniMax runs — keep GLM only") and the smoke output
 above is its record. The four planned records became two, both GLM.
 
+**Correction (2026-09-03, coordinator).** The cause above is right about the
+mechanism but wrong about who to blame. OpenRouter's own model metadata
+declares `structured_outputs: false` for **`minimax/minimax-m3:free`** and
+`structured_outputs: true` for the paid **`minimax/minimax-m3`**. The free
+variant is not a rate-limited version of the paid one — it lacks the capability
+entirely, which is exactly why `response_format` and a forced `strict` tool call
+both read as suggestions. Plan D10 chose `:free` on price grounds without
+checking that field.
+
+Re-smoking the **paid** `minimax/minimax-m3` × `json_schema` (3 items, ~$0.005;
+$0.30/M in, $1.20/M out — cheaper than `gpt-5-mini`) confirms it: items 1 and 2
+returned a correct, fully-enveloped payload with plausible per-field
+confidences. So MiniMax-M3 *can* honour the schema; the `:free` tier cannot.
+
+It still is not demo-viable, for a different and softer reason: item 3
+(`03-aandhi-windcheater`) came back as a 200 with **empty content and
+`finish_reason: 'stop'`** — `The provider returned no message content`. That is
+not one of the transient faults `providerHttp` retries (429/5xx), and the
+accuracy runner aborts the whole run on a failed item, so a 28-item run would
+die on item 3 and commit nothing. Retrying an empty 200 would be a real change
+to the retry policy, not a config tweak, and nothing in the release needs it.
+
+**Lesson (added).** Read the provider catalogue's capability flags before
+choosing a model on price. `:free` and paid variants of the same name can differ
+in what they *can* be asked to do, and a plan that names a `:free` model has
+made a capability decision without noticing.
+
 **Lesson** — a per-field `{value, confidence}` envelope is not just a data
 shape, it is the thing that made this failure *loud*: a bare
 `variantLabels: string[]` schema would have parsed this payload cleanly and put
