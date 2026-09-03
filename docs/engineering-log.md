@@ -8,6 +8,42 @@ Each entry is **Symptom → Cause → Fix → Lesson**. The Cause is the mechani
 
 ---
 
+## 2026-09-03 — the §8 release gate measures naming pedantry, not extraction safety
+
+### `publishedWithWrongField` scores a Tee/T-Shirt synonym the same as an invented stock total
+
+**Symptom.** No OpenRouter configuration could pass plan §8's
+`publishedWithWrongField = []`, while the committed `gpt-5-mini.json` (OpenAI Responses path)
+passed it. The obvious reading — "OpenAI is better, top up the credits" — was wrong, and acting
+on it would have spent money to fix nothing.
+
+**Cause.** Three consecutive 28-item runs of `openai/gpt-5-mini` × `json_schema` over OpenRouter
+put **every** wrong field in one column: `name`, nine misses in total, with price, stock,
+variantLabels, variantStock and description presence at **140/140**. Each name miss is a
+near-miss synonym — `JALEBI Tie-Dye T-Shirt` for `JALEBI Tie-Dye Tee`, `THELA Tote Bag` for
+`THELA Canvas Tote`, `Sling Bag` for `Crossbody Sling Bag` — produced at 0.85–0.95 confidence,
+so whether a run passes the gate depends only on whether one such synonym happens to cross the
+0.90 auto-publish threshold. The committed record's `[]` is that coin landing well: same model,
+same weak field, but its one wrong name arrived at confidence 0.70 and was held. `scoreDemoItem`
+compares names by exact string match, and `publishedWithWrongField` does not weight by field, so
+a cosmetic naming variant and GLM's invented stock total of 13 (summed from a per-variant split
+the caption never totals) are recorded as the same event.
+
+**Fix.** None in code — the finding is the fix. The gate needs to distinguish fields that move
+money or inventory (price, stock, variantStock, variantLabels) from a product name a merchant
+would happily accept. Restricted that way, gpt-5-mini via OpenRouter is clean in 3 of 3 runs and
+GLM still is not. Amending §8 is the owner's call and is the top item of
+`../agent-store-pvt/pre-release/MORNING_REVIEW.md`; the three-run evidence is in
+`fixtures/demo-dataset/README.md`.
+
+**Lesson.** A release gate built on an unweighted equality check over a hand-labelled field will
+eventually gate on the label's wording rather than the system's safety. When a gate fails, check
+*which* field failed and whether the scorer's notion of "wrong" matches the harm you were
+guarding against — before concluding the model is the problem. Also: one passing record is not
+evidence of calibration; n=1 on a threshold test is a coin flip you have not flipped twice.
+
+---
+
 ## 2026-09-03 — S2.3 live runs: MiniMax-M3 ignores both output modes, and `.env` is not a shell script
 
 ### MiniMax-M3 returns a shape neither `response_format` nor a forced tool call constrains
@@ -39,6 +75,33 @@ would be the adapter inventing a confidence the model never reported, in the
 exact fields the confidence gate reads; MiniMax was dropped under the plan §6
 de-scope ladder (rung 3, "MiniMax runs — keep GLM only") and the smoke output
 above is its record. The four planned records became two, both GLM.
+
+**Correction (2026-09-03, coordinator).** The cause above is right about the
+mechanism but wrong about who to blame. OpenRouter's own model metadata
+declares `structured_outputs: false` for **`minimax/minimax-m3:free`** and
+`structured_outputs: true` for the paid **`minimax/minimax-m3`**. The free
+variant is not a rate-limited version of the paid one — it lacks the capability
+entirely, which is exactly why `response_format` and a forced `strict` tool call
+both read as suggestions. Plan D10 chose `:free` on price grounds without
+checking that field.
+
+Re-smoking the **paid** `minimax/minimax-m3` × `json_schema` (3 items, ~$0.005;
+$0.30/M in, $1.20/M out — cheaper than `gpt-5-mini`) confirms it: items 1 and 2
+returned a correct, fully-enveloped payload with plausible per-field
+confidences. So MiniMax-M3 *can* honour the schema; the `:free` tier cannot.
+
+It still is not demo-viable, for a different and softer reason: item 3
+(`03-aandhi-windcheater`) came back as a 200 with **empty content and
+`finish_reason: 'stop'`** — `The provider returned no message content`. That is
+not one of the transient faults `providerHttp` retries (429/5xx), and the
+accuracy runner aborts the whole run on a failed item, so a 28-item run would
+die on item 3 and commit nothing. Retrying an empty 200 would be a real change
+to the retry policy, not a config tweak, and nothing in the release needs it.
+
+**Lesson (added).** Read the provider catalogue's capability flags before
+choosing a model on price. `:free` and paid variants of the same name can differ
+in what they *can* be asked to do, and a plan that names a `:free` model has
+made a capability decision without noticing.
 
 **Lesson** — a per-field `{value, confidence}` envelope is not just a data
 shape, it is the thing that made this failure *loud*: a bare

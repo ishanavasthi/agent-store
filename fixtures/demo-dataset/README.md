@@ -65,6 +65,7 @@ produced no record, and that is a result, not a gap:
 |---|---|
 | `z-ai/glm-5.3-flash` × `tool_call` | **completed**, record committed. Meets the 70% floor on every reportable field — and **disqualified**: it auto-published `23-machli-mesh-shorts` with a product stock of 13, the sum of the per-variant split `{S: 4, M: 7, L: 2}` that the caption never totals, at confidence 0.90. An invented number in the one column checkout trusts. |
 | `z-ai/glm-5.3-flash` × `json_schema` | **no record.** Three attempts, each reaching item 23 of 28 and stopping there: once on the adapter's token cap, twice on a request timeout at 120 s and 300 s. Same item, same model, same mode. |
+| `minimax/minimax-m3:free` — **both modes, root cause corrected 2026-09-03** | OpenRouter declares `structured_outputs: **false**` for the `:free` variant and `true` for the paid `minimax/minimax-m3`. The free tier lacks the capability outright, which is why `response_format` and a forced `strict` tool call were both ignored. A paid `minimax-m3` × `json_schema` smoke returned correct, fully-enveloped payloads on items 1–2 — so the model can honour the schema. It is still not viable: item 3 returned a 200 with **empty content** (`finish_reason: 'stop'`), which `providerHttp` does not retry and which aborts the run. |
 | `minimax/minimax-m3:free` × `tool_call` | **no record.** Failed on item 1: `variantLabels` came back as a bare `["S","M",…]` instead of `{value, confidence}`, under a *forced, strict* tool call. |
 | `minimax/minimax-m3:free` × `json_schema` | **no record.** Failed on item 1: the object arrived wrapped in a markdown fence, under a `response_format` that is supposed to make that impossible. |
 
@@ -87,6 +88,61 @@ guarantee, it is the only guarantee (`DECISIONS.md`, 2026-09-03). And the
 per-field `{value, confidence}` envelope is what made MiniMax's drift *loud*: a
 bare `variantLabels: string[]` schema would have accepted that payload and put
 an unconfirmed size list into the catalog.
+
+## `openai/gpt-5-mini` via OpenRouter — three runs (coordinator, 2026-09-03)
+
+Run after the S2.3 ticket merged, to answer one question: is the §8 gate
+(`publishedWithWrongField = []`) measuring model quality, or one item's confidence jitter?
+Three consecutive 28-item runs, `openai/gpt-5-mini` × `json_schema` over OpenRouter's
+Chat Completions path. Record committed: `runs/openrouter-openai-gpt-5-mini-json-schema.json`
+(the third run; the first two differed only as noted).
+
+| | run 1 | run 2 | run 3 |
+|---|---|---|---|
+| name | 26/28 | 24/28 | 25/28 |
+| price | **28/28** | **28/28** | **28/28** |
+| stock | **28/28** | **28/28** | **28/28** |
+| variantLabels | **28/28** | **28/28** | **28/28** |
+| variantStock | **28/28** | **28/28** | **28/28** |
+| descriptionPresence | **28/28** | **28/28** | **28/28** |
+| published | 4 | 3 | 3 |
+| §8 gate | FAIL | FAIL | FAIL |
+| published carrying a wrong field | `19-crossbody-sling-bag` | `10-thela-tote-bag` | `10-thela-tote-bag` |
+| elapsed | 255 s | 288 s | 283 s |
+
+**Every wrong field in all three runs is a `name`. Nine name misses; zero misses on anything
+else — 140/140 on price, stock, variantLabels, variantStock and description presence.**
+
+And every one of those name misses is a near-miss synonym, not an invention:
+
+| item | expected | returned | conf |
+|---|---|---|---|
+| `24-jalebi-tie-dye-tee` | `JALEBI Tie-Dye Tee` | `JALEBI Tie-Dye T-Shirt` | 0.90–0.95 |
+| `10-thela-tote-bag` | `THELA Canvas Tote` | `THELA Tote Bag` | 0.90–0.95 |
+| `19-crossbody-sling-bag` | `Crossbody Sling Bag` | `Sling Bag` | 0.85–0.90 |
+| `28-chandni-glow-tee` | `CHANDNI Glow Print Oversized Tee` | `Chandni Oversized Tee` | 0.90 |
+
+Two of these are the dataset's own hardest name traps: 19's caption never says what the product
+is (the name has to come from the photo), and 10 has no variants stated. `Tee` vs `T-Shirt` is
+scored a miss by exact string match and is not an error a buyer would notice.
+
+**So the gate does not separate model quality here — it separates naming pedantry.** Compare the
+two disqualifications side by side:
+
+- GLM × `tool_call` published `23-machli-mesh-shorts` with **stock 13**, a total it computed by
+  summing a per-variant split the caption never totals. An invented number in the one column
+  checkout trusts.
+- gpt-5-mini published `THELA Tote Bag` instead of `THELA Canvas Tote`.
+
+`publishedWithWrongField` records those as the same failure. They are not. Restricted to the
+fields that move money or inventory — price, stock, variantStock, variantLabels — gpt-5-mini via
+OpenRouter is **clean in 3 of 3 runs**, and GLM is not.
+
+Note the committed `runs/gpt-5-mini.json` (OpenAI Responses path) shows
+`publishedWithWrongField: []` with name 27/28 — the same model, the same weak field, but the one
+wrong name happened to land at confidence 0.70 and was held. Against three fresh runs at
+0.85–0.95, that `[]` reads as the lucky tail of one distribution rather than a property of the
+Responses API.
 
 ## Label schema
 
