@@ -185,11 +185,11 @@ Fallback without Orca: `Agent` with `isolation: "worktree"`, same contract, coor
 
 ## 8. Release gate (D16) — all true before recording on Sep 4
 
-- [ ] `npm run typecheck && npm test` green on `main`; `ci` green on the last merge.
-- [ ] Railway deployed with migration 0009 applied; `MERCHANT_TOKEN` and `EXTRACTION_*` set; `/merchant/mcp` and `/mcp` list the right tool sets from a real client.
-- [ ] Committed accuracy record for the chosen OpenRouter model shows `publishedWithWrongField = []`.
+- [x] `npm run typecheck && npm test` green on `main`; `ci` green on the last merge. **Verified 2026-09-03 on `2e595db`: 49 test files / 420 tests, `typecheck:viewer` clean, `ci` green.**
+- [x] Railway deployed with migration 0009 applied; `MERCHANT_TOKEN` and `EXTRACTION_*` set; `/merchant/mcp` and `/mcp` list the right tool sets from a real client. **Verified 2026-09-03 from a real MCP client: `/mcp` = 6 buyer tools, `/merchant/mcp` = 8 merchant tools, disjoint; migration + token proved by a live `store_summary`.**
+- [ ] Committed accuracy record for the chosen OpenRouter model shows `publishedWithWrongField = []`. **⛔ OPEN — and the gate itself is in question.** Three `openai/gpt-5-mini` runs over OpenRouter put every wrong field in `name` (near-miss synonyms) against 140/140 on price/stock/variants; the committed `gpt-5-mini.json` `[]` was one wrong name landing at confidence 0.70. Restricted to money/inventory fields, mini is clean 3/3 and GLM is not. Owner decision — see PR #55 and `MORNING_REVIEW.md`.
 - [ ] One full rehearsal of the video flow on the deployed URL: merchant take (held → confirm) → buyer purchase of that product (`success@razorpay`) → `/viewer` replay → optional `store_summary`.
-- [ ] `../agent-store-pvt/submission-notes.md` outline and checklist current.
+- [x] `../agent-store-pvt/submission-notes.md` outline and checklist current. **Updated 2026-09-03 with the deployed connector URLs, the merchant token, the two-field hold and the `catalog:archive` undo.**
 
 ## 9. Demo playbook (claude.ai)
 
