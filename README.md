@@ -6,9 +6,9 @@ formats — into something an AI buyer agent can actually buy from, with every m
 explainable, bounded and gated.
 
 **Demo video:** [Watch the walkthrough](https://youtu.be/0bqDZ2ffXMs) · **Live:**
-<https://agent-store-production-8345.up.railway.app> · **Audit viewer:**
-[`/viewer`](https://agent-store-production-8345.up.railway.app/viewer) · **Discovery doc:**
-[`/.well-known/agent-store.json`](https://agent-store-production-8345.up.railway.app/.well-known/agent-store.json)
+<https://agentstore.antideploy.com> · **Audit viewer:**
+[`/viewer`](https://agentstore.antideploy.com/viewer) · **Discovery doc:**
+[`/.well-known/agent-store.json`](https://agentstore.antideploy.com/.well-known/agent-store.json)
 
 > **Test mode, permanently.** This project never touches live payment credentials. The
 > server refuses to start on anything but a `rzp_test_…` key.
@@ -62,7 +62,7 @@ signed Intent with its Budget, the immutable Cart with its price locked by hash,
 Payment mandate, and the Order created *only after* the trust gate passed. Green "WHY ALLOWED"
 boxes explain each gate in English. The replay then continues through the Razorpay call recorded
 *before* it was made, the signed webhook, the merchant-signed Receipt, and the atomic stock
-decrement — [see the full replay live](https://agent-store-production-8345.up.railway.app/viewer).
+decrement — [see the full replay live](https://agentstore.antideploy.com/viewer).
 
 ![An Order replayed event by event in the audit viewer](docs/screenshots/viewer-order-replay.png)
 
@@ -167,16 +167,16 @@ The deployment is live and needs no setup:
 
 ```bash
 # 1. See the catalog an AI buyer sees
-curl -s https://agent-store-production-8345.up.railway.app/acp/products | head -40
+curl -s https://agentstore.antideploy.com/acp/products | head -40
 
 # 2. Read the protocol discovery doc
-curl -s https://agent-store-production-8345.up.railway.app/.well-known/agent-store.json
+curl -s https://agentstore.antideploy.com/.well-known/agent-store.json
 
 # 3. Replay a real purchase in your browser
-open https://agent-store-production-8345.up.railway.app/viewer
+open https://agentstore.antideploy.com/viewer
 ```
 
-To let Claude buy something, add `https://agent-store-production-8345.up.railway.app/mcp` as a
+To let Claude buy something, add `https://agentstore.antideploy.com/mcp` as a
 custom connector (no auth) — see [Connecting a Claude client](#connecting-a-claude-client).
 
 ---
@@ -480,35 +480,55 @@ still produces a **successful** payment, so "user cancels" is not a failure scen
 
 ## Deploying
 
-Two deployments run the same commit against the same Neon database:
+**Antideploy is the deployment.** Everything below runs against the same Neon database it
+always has — the host changed, the data did not.
 
 | | |
 |---|---|
-| **Railway** (primary) | <https://agent-store-production-8345.up.railway.app> — `railway.json`; does not sleep, so a judge's first tool call pays no cold start. Migrations and the seed run in `preDeployCommand`, which completes before any container serves traffic (Railway's *build* sandbox cannot open the Neon WebSocket). |
-| **Render** (fallback) | <https://agent-store-e4ka.onrender.com> — `render.yaml`, free plan, Node 22, Singapore, health check on `/healthz`. Migrations and the seed run in the build command, so a failed migration fails the deploy rather than crash-looping the service. |
+| **Antideploy** (primary) | <https://agentstore.antideploy.com> — `.antideploy.json` pins the application id. Node is detected from `package.json`; `PORT` is injected by the platform and deliberately left unset in the project's own secrets, so nothing can pin the container to the wrong port. |
 
-**Neither platform deploys on merge.** Railway has no GitHub source connected (`railway up`
-only) and Render's blueprint is deployed by hand. Merging is not deploying — push the
-deploy yourself, one platform at a time, and check `/healthz` before the next.
+`DATABASE_URL` is set explicitly to the Neon **pooled** string, which overrides the Postgres
+Antideploy would otherwise provision — its deploy log says so in as many words
+(*"Setting up the database — skipped: you already use Neon"*). That is what keeps every
+Order, Receipt and audit event written before the move readable after it, and it is why
+`MERCHANT_TOKEN` is pinned in the environment: an already-minted token is never rotated, so
+a connector configured against the old host keeps working against this one.
 
-**For this release, Railway only.** The merchant face, `submit_catalog_item` and
-`/demo/images` ship to Railway; Render deliberately stays on its previous build and is not
-redeployed (plan `docs/superpowers/plans/2026-09-03-pre-release.md` D8). So the Render URL
-above serves the buyer face and the audit viewer as they were, and answers 404 on
-`/merchant/mcp` and `/demo/images` — that is expected, not a broken deploy. Railway is the
-URL to connect a client to, and the one the demo runs against.
+**Deploying is a push, not a merge.** No platform here watches GitHub. Tar the directory and
+`POST /api/v1/deploy`, then check `/healthz` before telling anyone it is live. The free plan
+allows **10 successful deploys a month** — failed builds are free, so iterate as much as a
+broken build needs; only shipping costs quota.
+
+### Retired hosts
+
+`railway.json` and `render.yaml` are kept for reference and are no longer deployed. Railway
+(`agent-store-production-8345.up.railway.app`) was primary through the demo recording and
+its trial has since lapsed; Render (`agent-store-e4ka.onrender.com`) never advanced past its
+pre-merchant-face build. **The published demo video shows the Railway URL**, which no longer
+resolves — the flow it demonstrates is unchanged, and it runs identically against the
+Antideploy URL above.
 
 Standing up your own:
 
 1. Create a Neon project; copy the **pooled** connection string.
-2. Create the service — Railway from `railway.json`, or a Render Blueprint from `render.yaml`.
-3. Fill in the four secret env vars in the platform dashboard. `PUBLIC_BASE_URL` can only be
-   set after the first deploy assigns a URL — set it, then redeploy.
-4. Point the Razorpay webhook at `{PUBLIC_BASE_URL}/webhooks/razorpay`.
-5. Add a repository **variable** `RENDER_URL` (Settings → Secrets and variables → Actions →
-   Variables) with the deployed origin. `.github/workflows/keep-warm.yml` then pings
-   `/healthz` every 10 minutes so a sleeping free-tier service is warm on arrival. Until
-   that variable exists, the workflow runs and exits cleanly.
+2. Create the application, which decides the public address:
+   `POST /api/v1/applications` with `{"name":"agent-store","subdomain":"<yours>"}`. Save the
+   returned id to `.antideploy.json` — it holds no secret and is safe to commit.
+3. Push the environment with `PUT /api/v1/secrets`, wrapped as `{"env":{...}}`. Set
+   `DATABASE_URL` to the pooled Neon string and `PUBLIC_BASE_URL` to the subdomain you just
+   chose — unlike a platform that assigns the URL after the fact, you know it up front, so
+   there is no first-deploy-then-fix-the-URL dance. **Leave `PORT` unset**; the platform
+   injects it, and an app that listens on the wrong port is this platform's most common
+   failure.
+4. Deploy: `tar czf - --exclude=.git --exclude=node_modules --exclude=.env .` piped to
+   `POST /api/v1/deploy?applicationId=<id>`, then poll `/api/v1/deployments/{taskId}` until
+   `succeeded`. Excluding `.env` is not optional — the tarball is the build context.
+5. Point the Razorpay webhook at `{PUBLIC_BASE_URL}/webhooks/razorpay`.
+
+`.github/workflows/keep-warm.yml` pings `/healthz` every 10 minutes when a repository
+**variable** `RENDER_URL` (Settings → Secrets and variables → Actions → Variables) holds the
+deployed origin. It is a leftover from the free-tier Render host and is not required here;
+until that variable exists the workflow runs and exits cleanly.
 
 ---
 
@@ -519,7 +539,7 @@ Standing up your own:
 Settings → Connectors → **Add custom connector**, and paste:
 
 ```
-https://agent-store-production-8345.up.railway.app/mcp
+https://agentstore.antideploy.com/mcp
 ```
 
 No authentication — leave OAuth fields empty. The transport is authless by decision
@@ -539,7 +559,7 @@ Cap instead and the Refusal gets its own timeline.
 The merchant connects a **second** custom connector, to the merchant face:
 
 ```
-https://agent-store-production-8345.up.railway.app/merchant/mcp
+https://agentstore.antideploy.com/merchant/mcp
 ```
 
 Also no authentication. Identity is the store's `MERCHANT_TOKEN`, presented as the
@@ -596,7 +616,7 @@ All three are reads: they write no audit event and change no state.
 ### Claude Code (testing and fallback)
 
 ```bash
-claude mcp add --transport http agent-store https://agent-store-production-8345.up.railway.app/mcp
+claude mcp add --transport http agent-store https://agentstore.antideploy.com/mcp
 ```
 
 Or against a local server: `claude mcp add --transport http agent-store http://localhost:3000/mcp`.

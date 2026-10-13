@@ -757,6 +757,26 @@ run that.
 
 ---
 
+## 2026-09-22 — moved the deployment to Antideploy without moving the data
+
+**What happened** — Railway's trial credit was about to lapse, so the deployment had to move. The instinct was to treat this as a data migration and copy 37 products / 22 orders / 204 audit events to the new platform's Postgres.
+
+**The thing that made it a one-hour job instead of a day** — `DATABASE_URL` was a plain Neon connection string, not a Railway-provisioned addon. Railway hosted only the *compute*. Checking `railway variables` before planning anything is what surfaced that; the whole "copy the data" plan, including a driver swap and a restore-on-boot path, evaporated on one command's output. **Check what actually owns the data before planning a data migration.**
+
+**Traps found on the way**
+
+- **Antideploy's secrets endpoint rejects a bare object.** `PUT /api/v1/secrets` needs `{"env":{"KEY":"value"}}`; sending the key/value map directly answers `400 {"code":"empty"}` with the misleading message *"No usable values"* — which reads like the values were wrong rather than the envelope.
+- **Leave `PORT` unset.** The platform injects it, and its own docs name "builds fine, never listens on the port" as the most common failure. Copying `PORT=8080` across from Railway would have reproduced exactly that. Blank values, placeholders and `PORT` are ignored by the secrets endpoint anyway.
+- **A user-set `DATABASE_URL` overrides the Postgres the platform would provision**, and the deploy log says so explicitly (`Setting up the database — skipped: you already use Neon`). Read the per-step `detail` in `/api/v1/deployments/{taskId}` — it is the only place that confirms which database you actually got.
+- **`migrate` reported `skipped — no migrations detected`** and this was *fine*, because the Neon schema was already current. On a fresh database it would not have been: this project has no boot-time migration step, it relied on Railway's `preDeployCommand`, and Antideploy has no equivalent. **Anyone pointing this app at an empty database must run `db:migrate:prod` themselves first.**
+- **Both MCP faces answer `text/event-stream`, not JSON.** Piping `/mcp` straight into a JSON parser fails with `Expecting value: line 1 column 1` and looks exactly like an empty or broken response. Strip the `data: ` prefix first. Cost ten minutes of chasing a non-existent outage.
+
+**Verification that actually proved the move** — not `/healthz`, which only proves the process booted. Fetching `/acp/products` from the old and new hosts and comparing the parsed payloads: 102 variants across 32 published products, identical on both. `MERCHANT_TOKEN` was carried across deliberately, so the merchant connector token printed in the submission notes still authenticates — an already-minted token is never rotated, so a fresh mint would have silently broken every configured connector.
+
+**Lesson** — "migrate the deployment" and "migrate the data" are different jobs, and conflating them is expensive. The cheap move is to keep the database still and move only the compute.
+
+---
+
 ## Standing traps in the environment
 
 Not bugs of ours — properties of the platforms that will mislead someone eventually.
@@ -770,7 +790,8 @@ Not bugs of ours — properties of the platforms that will mislead someone event
 
 **Hosting**
 - Render's free web service spins down after roughly 15 minutes idle; the keep-warm ping mitigates but does not eliminate the cold start.
-- Railway has no free tier: a $5 one-time trial credit valid 30 days, then $5/month or services pause.
+- Railway has no free tier: a $5 one-time trial credit valid 30 days, then $5/month or services pause. That credit lapsed on 2026-09-23 and the host was retired — see the Antideploy entry below.
+- Antideploy's free plan counts **successful** deploys only (10/month, reset on the 1st); a failed build costs nothing. Nothing in its published limits governs uptime, bandwidth or requests, so hitting the cap blocks the next release rather than taking the app down.
 
 **Toolchain**
 - The dev machine's default npm is 11.x while the repo pins npm 10 (`engines.npm` + `packageManager`), and the pin only **warns** (EBADENGINE) — it does not block. A bare `npm install` here silently regenerates `package-lock.json` in the npm-11 shape that npm 10 rejects on every deploy target (the 2026-08-24 incident above). It bit again on 2026-08-26 during T2's merge verification: the rewrite dropped ~470 lines of nested `node_modules/vitest/node_modules/@esbuild/*` entries and was caught by `git status` and reverted before commit. Safe invocation on this machine: `npx --yes npm@10.9.3 install …`. A `preinstall` engine guard (e.g. `npx check-node-version` or a one-line version test) would make the pin enforceable; not yet added.
